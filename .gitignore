@@ -1,0 +1,8 @@
+.env
+data*
+log*
+result*
+model*
+
+.vscode/
+__pycache__/
