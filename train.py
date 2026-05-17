@@ -69,6 +69,7 @@ model = model.to(device)
 # Define Loss Function
 classification_criterion = nn.MSELoss()
 forecasting_criterion = nn.MSELoss()
+kss_f_criterion = nn.MSELoss()
 
 # Optimizer
 optimizer = optim.Adam(model.parameters(), lr=config.L_RATE)
@@ -100,8 +101,8 @@ for epoch in range(config.EPOCH):
     train_kss_acc_sum = 0.0
     train_forecast_mae_sum = 0.0
     train_forecast_mse_sum = 0.0
-    train_kss_forecast_mae_sum = 0.0
-    train_kss_forecast_acc_sum = 0.0
+    train_kss_f_mae_sum = 0.0
+    train_kss_f_acc_sum = 0.0
 
     total_samples = 0
     total_batch = 0
@@ -125,7 +126,7 @@ for epoch in range(config.EPOCH):
             data = data.to(device)
             label = label.float().unsqueeze(1).to(device)
             future_data = future_data.to(device)
-            future_label = future_label.to(device)
+            future_label = future_label.unsqueeze(1).to(device)
 
             batch_size = data.size(0)
             total_samples += batch_size
@@ -139,7 +140,8 @@ for epoch in range(config.EPOCH):
             # calculate loss
             loss_kss = classification_criterion(pred_kss, label)
             loss_forecast = forecasting_criterion(pred_forecast, future_data)
-            batch_loss = (config.ALPHA * loss_kss) + ((1 - config.ALPHA) * loss_forecast)
+            loss_kss_f = kss_f_criterion(pred_kss_f, future_label)
+            batch_loss = (config.ALPHA_KSS * loss_kss) + (config.ALPHA_FORCASTING * loss_forecast) + (config.ALPHA_KSS * loss_kss_f)
             batch_loss.backward()
 
             # gradient clipping
@@ -167,13 +169,22 @@ for epoch in range(config.EPOCH):
             forecast_mse = torch.nn.functional.mse_loss(pred_forecast, future_data).item()
             train_forecast_mse_sum += forecast_mse * batch_size
 
+            # 5. Future KSS MAE
+            kss_f_mae = torch.abs(pred_kss_f - future_label).mean().item()
+            train_kss_f_mae_sum += kss_mae * batch_size
+
+            # 6. Future KSS Accuracy
+            rounded_kss_f = torch.clamp(torch.round(pred_kss_f), min=1.0, max=9.0)
+            correct_kss_f = (rounded_kss_f == future_label).sum().item()
+            train_kss_f_acc_sum += correct_kss_f
+
     avg_train_loss = total_train_loss / total_batch
     avg_kss_mae = train_kss_mae_sum / total_samples
     avg_kss_acc = train_kss_acc_sum / total_samples # in decimal
     avg_forecast_mae = train_forecast_mae_sum / total_samples
     avg_forecast_rmse = math.sqrt(train_forecast_mse_sum / total_samples)
-    avg_kss_f_mae = train_kss_forecast_mae_sum / total_samples
-    avg_kss_f_acc = train_kss_forecast_acc_sum / total_samples # in decimal
+    avg_kss_f_mae = train_kss_f_mae_sum / total_samples
+    avg_kss_f_acc = train_kss_f_acc_sum / total_samples # in decimal
 
     # Save history
     history['train_loss'].append(avg_train_loss)
@@ -216,7 +227,7 @@ for epoch in range(config.EPOCH):
                 data = data.to(device)
                 label = label.float().unsqueeze(1).to(device)
                 future_data = future_data.to(device)
-                future_label = future_label.to(device)
+                future_label = future_label.unsqueeze(1).to(device)
 
                 batch_size = data.size(0)
                 total_samples += batch_size
@@ -228,8 +239,8 @@ for epoch in range(config.EPOCH):
 
                 loss_kss = classification_criterion(pred_kss, label)
                 loss_forecast = forecasting_criterion(pred_forecast, future_data)
-                
-                batch_loss = (config.ALPHA * loss_kss) + ((1 - config.ALPHA) * loss_forecast)
+                loss_kss_f = kss_f_criterion(pred_kss_f, future_label)
+                batch_loss = (config.ALPHA_KSS * loss_kss) + (config.ALPHA_FORCASTING * loss_forecast) + (config.ALPHA_KSS * loss_kss_f)
                 total_val_loss += batch_loss.item()
 
                 # Calculate Metrics
@@ -248,6 +259,15 @@ for epoch in range(config.EPOCH):
                 # 4. Forcast MSE
                 forecast_mse = torch.nn.functional.mse_loss(pred_forecast, future_data).item()
                 val_forecast_mse_sum += forecast_mse * batch_size
+
+                # 5. Future KSS MAE
+                kss_mae_f = torch.abs(pred_kss_f - future_label).mean().item()
+                val_kss_f_mae_sum += kss_mae_f * batch_size
+
+                # 2. KSS Accuracy
+                rounded_kss_f = torch.clamp(torch.round(pred_kss_f), min=1.0, max=9.0)
+                correct_kss_f = (rounded_kss_f == future_label).sum().item()
+                val_kss_f_acc_sum += correct_kss
 
     avg_val_loss = total_val_loss / total_batch
     avg_kss_mae = val_kss_mae_sum / total_samples

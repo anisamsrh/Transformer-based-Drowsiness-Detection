@@ -15,4 +15,5 @@ OUTPUT_DIM = 1
 # TRAINING VARIABLES
 L_RATE = 0.001
 EPOCH = 50
-ALPHA = 0.5 # The importance of each loss_function
+ALPHA_KSS = 0.4 # The importance of each loss_function
+ALPHA_FORCASTING = 0.2

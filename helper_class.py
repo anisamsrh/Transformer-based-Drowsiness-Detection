@@ -37,8 +37,8 @@ class TimeSeriesDataset(Dataset):
         y_kss_future = np.max(future_labels)
 
         return (
-            torch.tensor(x, dtype=torch.float32),
-            torch.tensor(y_classification, dtype=torch.float32),
+            torch.tensor(x, dtype=torch.float32), # [batch, seq, channel]
+            torch.tensor(y_classification, dtype=torch.float32), #[batch]
             torch.tensor(y_forecasting, dtype=torch.float32),
             torch.tensor(y_kss_future, dtype=torch.float32)
         )
