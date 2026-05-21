@@ -18,13 +18,18 @@ def get_kss_score(nf) :
     kss = nf.split("_")
     return float(kss[2])
 
-def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_rate"], rename=["timestamp", "data"]) : 
+def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_rate", "breath_rate"], rename=["timestamp", "hr", "br"]) : 
     dc = {}
     dt = glob.glob(f"data_{folder}/*")
 
     all_input_data = []
     for i in dt:
-        df = pd.read_csv(f"{i}/{file}", usecols=usecols)
+        # use either of this if the data spread across files
+        # df = pd.read_csv(f"{i}/{file}", usecols=usecols)
+        # df = pd.concat((pd.read_csv(f) for f in glob.glob(f"data_{folder}/{i}/mmwave_ss*.csv")), ignore_index=True)
+
+        df = pd.read_csv(f"data_{folder}/{i}/mmwave_ss.csv")
+        df.info()
         df.rename(columns=dict(zip(usecols, rename)), inplace=True)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
@@ -47,9 +52,9 @@ def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_ra
         dc[i]["data"] = scaler.transform(dc[i][["data"]]).flatten()
     return dc, scaler
 
-train_df, scaler = load_data_as_cache("train", "mmwave_ss_heart.csv")
+train_df, scaler = load_data_as_cache("train", "mmwave_ss.csv")
 train_folder = glob.glob(f"data_train/*")
-val_df, _ = load_data_as_cache("val", "mmwave_ss_heart.csv", scaler=scaler)
+val_df, _ = load_data_as_cache("val", "mmwave_ss.csv", scaler=scaler)
 val_folder = glob.glob(f"data_val/*")
 
 model = TimeSeriesTransformer(
@@ -192,8 +197,8 @@ for epoch in range(config.EPOCH):
     history['train_kss_acc'].append(avg_kss_acc)
     history['train_forecast_mae'].append(avg_forecast_mae)
     history['train_forecast_rmse'].append(avg_forecast_rmse)
-    history['train_kss_mae'].append(avg_kss_f_mae)
-    history['train_kss_acc'].append(avg_kss_f_acc)
+    history['train_kss_forecast_mae'].append(avg_kss_f_mae)
+    history['train_kss_forecast_acc'].append(avg_kss_f_acc)
 
     # VALIDATION
     model.eval()
@@ -283,8 +288,8 @@ for epoch in range(config.EPOCH):
     history['val_kss_acc'].append(avg_kss_acc)
     history['val_forecast_mae'].append(avg_forecast_mae)
     history['val_forecast_rmse'].append(avg_forecast_rmse)
-    history['val_kss_mae'].append(avg_kss_f_mae)
-    history['val_kss_acc'].append(avg_kss_f_acc)
+    history['val_kss_forecast_mae'].append(avg_kss_f_mae)
+    history['val_kss_forecast_acc'].append(avg_kss_f_acc)
     print(f"Epoch [{epoch+1}/{config.EPOCH}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
     if avg_val_loss < best_val_loss:
