@@ -18,7 +18,7 @@ def get_kss_score(nf) :
     kss = nf.split("_")
     return float(kss[2])
 
-def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_rate", "breath_rate"], rename=["timestamp", "hr", "br"]) : 
+def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_rate", "breath_rate"], rename=["timestamp", "data", "br"]) : 
     dc = {}
     dt = glob.glob(f"data_{folder}/*")
 
@@ -26,9 +26,10 @@ def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_ra
     for i in dt:
         # use either of this if the data spread across files
         # df = pd.read_csv(f"{i}/{file}", usecols=usecols)
-        # df = pd.concat((pd.read_csv(f) for f in glob.glob(f"data_{folder}/{i}/mmwave_ss*.csv")), ignore_index=True)
+        # df = pd.concat((pd.read_csv(f) for f in glob.glob(f"{i}/mmwave_ss*.csv")), ignore_index=True)
+        # if the data is in one file use this instead
+        df = pd.read_csv(f"{i}/{file}")
 
-        df = pd.read_csv(f"data_{folder}/{i}/mmwave_ss.csv")
         df.info()
         df.rename(columns=dict(zip(usecols, rename)), inplace=True)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -39,6 +40,7 @@ def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_ra
         df = df.resample("1s").mean().interpolate(method="linear")
         df = df.reset_index()
 
+        # all_input_data.append(df[["hr", "br"]])
         all_input_data.append(df[["data"]])
 
         dc[i] = df
@@ -49,6 +51,7 @@ def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_ra
         scaler.fit(df_all_input_data)
 
     for i in dc.keys():
+        # dc[i][["hr", "br"]] = scaler.transform(dc[i][["hr", "br"]])
         dc[i]["data"] = scaler.transform(dc[i][["data"]]).flatten()
     return dc, scaler
 
@@ -91,8 +94,8 @@ history = {'train_loss' : [],
            'val_kss_acc': [],
            'val_forecast_mae': [],
            'val_forecast_rmse': [],
-           'train_kss_forecast_mae': [],
-           'train_kss_forecast_acc': [],
+           'val_kss_forecast_mae': [],
+           'val_kss_forecast_acc': [],
         }
 
 best_val_loss = float('inf')
@@ -316,6 +319,6 @@ for epoch in range(config.EPOCH):
 if not os.path.exists("log") :
     os.mkdir("log")
 metrics = pd.DataFrame(history)
-metrics.to_csv(f"log/trai_eval_{timestamp}.csv", index=False)
+metrics.to_csv(f"log/train_eval_{timestamp}.csv", index=False)
 
 
