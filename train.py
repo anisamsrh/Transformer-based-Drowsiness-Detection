@@ -1,324 +1,101 @@
-import glob
-import random
-import time
-import os
-import math
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+import time
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-import torch.optim as optim
+import numpy as np
+from darts import TimeSeries
+from darts.models import TFTModel
+from darts.dataprocessing.transformers import Scaler
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger
+import glob
+import os
+from sklearn.preprocessing import RobustScaler
 
-import config
-from helper_class import TimeSeriesDataset, PositionalEncoding, TimeSeriesTransformer
+import config as CONFIG
 
 def get_kss_score(nf) : 
-    # use post-record score
     kss = nf.split("_")
-    return float(kss[2])
+    return float(kss[3])
 
-def load_data_as_cache(folder, file, scaler=None, usecols=["log_time", "heart_rate", "breath_rate"], rename=["timestamp", "data", "br"]) : 
-    dc = {}
-    dt = glob.glob(f"data_{folder}/*")
+def apply_fixed_scaling(series, absolute_min, absolute_max):
+    scaled_series = (series - absolute_min) / (absolute_max - absolute_min)
+    return np.clip(scaled_series, 0.0, 1.0)
 
-    all_input_data = []
-    for i in dt:
-        # use either of this if the data spread across files
-        # df = pd.read_csv(f"{i}/{file}", usecols=usecols)
-        # df = pd.concat((pd.read_csv(f) for f in glob.glob(f"{i}/mmwave_ss*.csv")), ignore_index=True)
-        # if the data is in one file use this instead
-        df = pd.read_csv(f"{i}/{file}")
+def load_data_as_ts_list(ft, file):
+    folders = glob.glob(f"data_{ft}/*")
+    target_ts_list = []
+    past_cov_ts_list = []
 
-        df.info()
-        df.rename(columns=dict(zip(usecols, rename)), inplace=True)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-
-        df["label"] = get_kss_score(i)
-
-        df = df.set_index("timestamp")
+    for f in folders :
+        df = pd.read_csv(f"{f}/{file}")
+        df["kss_score"] = get_kss_score(f)
+        df["log_time"] = pd.to_datetime(df['log_time'])
+        df = df.set_index("log_time")
         df = df.resample("1s").mean().interpolate(method="linear")
         df = df.reset_index()
 
-        # all_input_data.append(df[["hr", "br"]])
-        all_input_data.append(df[["data"]])
+        df["kss_score"] = apply_fixed_scaling(df["kss_score"], 1, 9)
+        df["breath_rate"] = apply_fixed_scaling(df["breath_rate"], 5, 40)
+        df["heart_rate"] = apply_fixed_scaling(df["heart_rate"], 40, 200)
 
-        dc[i] = df
+        target_ts = TimeSeries.from_dataframe(df, time_col="log_time", value_cols=["kss_score"])
+        past_cov_ts = TimeSeries.from_dataframe(df, time_col="log_time", value_cols=["breath_rate", "heart_rate"])
+        target_ts_list.append(target_ts)
+        past_cov_ts_list.append(past_cov_ts)
+    return target_ts_list, past_cov_ts_list
 
-    if scaler is None :
-        scaler = StandardScaler()
-        df_all_input_data = pd.concat(all_input_data, ignore_index=True)
-        scaler.fit(df_all_input_data)
+file = "mmwave_ss.csv"
+train_target, train_past_cov = load_data_as_ts_list("train", file)
+val_target, val_past_cov = load_data_as_ts_list("val", file)
 
-    for i in dc.keys():
-        # dc[i][["hr", "br"]] = scaler.transform(dc[i][["hr", "br"]])
-        dc[i]["data"] = scaler.transform(dc[i][["data"]]).flatten()
-    return dc, scaler
+print("-----Data Loaded-----")
 
-train_df, scaler = load_data_as_cache("train", "mmwave_ss.csv")
-train_folder = glob.glob(f"data_train/*")
-val_df, _ = load_data_as_cache("val", "mmwave_ss.csv", scaler=scaler)
-val_folder = glob.glob(f"data_val/*")
+timestamp = time.time()
+logger = CSVLogger(save_dir="logs/", name=f"tft_run_{timestamp}")
 
-model = TimeSeriesTransformer(
-    config=config,
-    input_dim=config.INPUT_DIM,
-    d_model=config.D_MODEL,
-    nhead=config.NUM_HEADS,
-    num_layers=config.NUM_LAYERS,
+checkpoint_callback = ModelCheckpoint(
+    monitor="val_loss",
+    mode="min",
+    save_top_k=1, # only save 1 file
+    dirpath="logs/checkpoints/",
+    filename=f"tft_{timestamp}_epoch{{epoch:02d}}_val{{val_loss:.4f}}",
+    save_weights_only=False 
 )
 
-# Setup Device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Training using {device}")
+model = TFTModel(
+    input_chunk_length=CONFIG.INPUT_CHUNK_LEN, # change to seq_len * context_time
+    output_chunk_length=CONFIG.OUTPUT_CHUNK_LEN, # change to seq_len * prediction_time
+    hidden_size=CONFIG.HIDDEN_SIZE,
+    lstm_layers=CONFIG.LSTM_LAYERS,
+    num_attention_heads=CONFIG.ATT_HEADS,
+    dropout=CONFIG.DROPOUT,
+    batch_size=CONFIG.BATCH_SIZE, # change to batch_size
+    n_epochs=CONFIG.EPOCH, # change to epoch
+    optimizer_kwargs={"lr": CONFIG.L_RATE},
+    loss_fn=torch.nn.MSELoss(),
+    add_encoders={ # automate extract future_cov from timestamp/log_time
+        'cyclic': {'future': ['minute', 'second', 'hour']},
+        'transformer': Scaler()
+    },
+    pl_trainer_kwargs={ # trainer from pytorch lightning
+        "accelerator": "auto",
+        "callbacks": [checkpoint_callback],
+        "logger": logger,
+        "enable_checkpointing":True,
+        "log_every_n_steps": 1
+    },
+    random_state=42, # seed so the experiment can be reproduced
+)
 
-model = model.to(device)
+print("-----Start Training-----")
 
-# Define Loss Function
-classification_criterion = nn.MSELoss()
-forecasting_criterion = nn.MSELoss()
-kss_f_criterion = nn.MSELoss()
+os.makedirs("log/checkpoint", exist_ok=True)
 
-# Optimizer
-optimizer = optim.Adam(model.parameters(), lr=config.L_RATE)
-
-history = {'train_loss' : [], 
-           'train_kss_mae': [],
-           'train_kss_acc': [],
-           'train_forecast_mae': [],
-           'train_forecast_rmse': [],
-           'train_kss_forecast_mae': [],
-           'train_kss_forecast_acc': [],
-           'val_loss' : [],
-           'val_kss_mae': [],
-           'val_kss_acc': [],
-           'val_forecast_mae': [],
-           'val_forecast_rmse': [],
-           'val_kss_forecast_mae': [],
-           'val_kss_forecast_acc': [],
-        }
-
-best_val_loss = float('inf')
-timestamp = time.time()
-
-for epoch in range(config.EPOCH):
-    # TRAINING
-    model.train()
-    total_train_loss = 0.0
-    train_kss_mae_sum = 0.0
-    train_kss_acc_sum = 0.0
-    train_forecast_mae_sum = 0.0
-    train_forecast_mse_sum = 0.0
-    train_kss_f_mae_sum = 0.0
-    train_kss_f_acc_sum = 0.0
-
-    total_samples = 0
-    total_batch = 0
-    random.shuffle(train_folder)
-
-    for folder in train_folder:
-        kss = get_kss_score(folder)
-
-        df = train_df[folder]
-
-        train_dataset = TimeSeriesDataset(config, df)
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=config.BATCH_SIZE,
-            shuffle=True
-        )
-        total_batch += len(train_loader)
-
-        for batch_idx, (data, label, future_data, future_label) in enumerate(train_loader):
-            # Move data to GPU if available
-            data = data.to(device)
-            label = label.float().unsqueeze(1).to(device)
-            future_data = future_data.to(device)
-            future_label = future_label.unsqueeze(1).to(device)
-
-            batch_size = data.size(0)
-            total_samples += batch_size
-
-            # Set gradient from last epoch to zero
-            optimizer.zero_grad()
-
-            # get prediction
-            pred_kss, pred_forecast, pred_kss_f = model(data)
-
-            # calculate loss
-            loss_kss = classification_criterion(pred_kss, label)
-            loss_forecast = forecasting_criterion(pred_forecast, future_data)
-            loss_kss_f = kss_f_criterion(pred_kss_f, future_label)
-            batch_loss = (config.ALPHA_KSS * loss_kss) + (config.ALPHA_FORCASTING * loss_forecast) + (config.ALPHA_KSS * loss_kss_f)
-            batch_loss.backward()
-
-            # gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
-            optimizer.step()
-            
-            total_train_loss += batch_loss.item()
-
-            # Calculate Metrics
-            # 1. KSS MAE
-            kss_mae = torch.abs(pred_kss - label).mean().item()
-            train_kss_mae_sum += kss_mae * batch_size
-
-            # 2. KSS Accuracy
-            rounded_kss = torch.clamp(torch.round(pred_kss), min=1.0, max=9.0)
-            correct_kss = (rounded_kss == label).sum().item()
-            train_kss_acc_sum += correct_kss
-
-            # 3. Forecast MAE
-            forecast_mae = torch.abs(pred_forecast - future_data).mean().item()
-            train_forecast_mae_sum += forecast_mae * batch_size
-
-            # 4. Forcast MSE
-            forecast_mse = torch.nn.functional.mse_loss(pred_forecast, future_data).item()
-            train_forecast_mse_sum += forecast_mse * batch_size
-
-            # 5. Future KSS MAE
-            kss_f_mae = torch.abs(pred_kss_f - future_label).mean().item()
-            train_kss_f_mae_sum += kss_mae * batch_size
-
-            # 6. Future KSS Accuracy
-            rounded_kss_f = torch.clamp(torch.round(pred_kss_f), min=1.0, max=9.0)
-            correct_kss_f = (rounded_kss_f == future_label).sum().item()
-            train_kss_f_acc_sum += correct_kss_f
-
-    avg_train_loss = total_train_loss / total_batch
-    avg_kss_mae = train_kss_mae_sum / total_samples
-    avg_kss_acc = train_kss_acc_sum / total_samples # in decimal
-    avg_forecast_mae = train_forecast_mae_sum / total_samples
-    avg_forecast_rmse = math.sqrt(train_forecast_mse_sum / total_samples)
-    avg_kss_f_mae = train_kss_f_mae_sum / total_samples
-    avg_kss_f_acc = train_kss_f_acc_sum / total_samples # in decimal
-
-    # Save history
-    history['train_loss'].append(avg_train_loss)
-    history['train_kss_mae'].append(avg_kss_mae)
-    history['train_kss_acc'].append(avg_kss_acc)
-    history['train_forecast_mae'].append(avg_forecast_mae)
-    history['train_forecast_rmse'].append(avg_forecast_rmse)
-    history['train_kss_forecast_mae'].append(avg_kss_f_mae)
-    history['train_kss_forecast_acc'].append(avg_kss_f_acc)
-
-    # VALIDATION
-    model.eval()
-    total_val_loss = 0.0
-    val_kss_mae_sum = 0.0
-    val_kss_acc_sum = 0.0
-    val_forecast_mae_sum = 0.0
-    val_forecast_mse_sum = 0.0
-    val_kss_f_mae_sum = 0.0
-    val_kss_f_acc_sum = 0.0
-
-    total_samples = 0
-    total_batch = 0
-    random.shuffle(val_folder)
-
-    for folder in val_folder:
-        kss = get_kss_score(folder)
-
-        df = val_df[folder]
-
-        val_dataset = TimeSeriesDataset(config, df)
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=config.BATCH_SIZE,
-            shuffle=True
-        )
-        total_batch += len(val_loader)
-
-        with torch.no_grad() :
-            for data, label, future_data, future_label in val_loader:
-                data = data.to(device)
-                label = label.float().unsqueeze(1).to(device)
-                future_data = future_data.to(device)
-                future_label = future_label.unsqueeze(1).to(device)
-
-                batch_size = data.size(0)
-                total_samples += batch_size
-                
-                pred_kss, pred_forecast, pred_kss_f = model(data)
-
-                rounded_kss = torch.round(pred_kss)
-                rounded_kss = torch.clamp(rounded_kss, min=1.0, max=9.0)
-
-                loss_kss = classification_criterion(pred_kss, label)
-                loss_forecast = forecasting_criterion(pred_forecast, future_data)
-                loss_kss_f = kss_f_criterion(pred_kss_f, future_label)
-                batch_loss = (config.ALPHA_KSS * loss_kss) + (config.ALPHA_FORCASTING * loss_forecast) + (config.ALPHA_KSS * loss_kss_f)
-                total_val_loss += batch_loss.item()
-
-                # Calculate Metrics
-                # 1. KSS MAE
-                kss_mae = torch.abs(pred_kss - label).mean().item()
-                val_kss_mae_sum += kss_mae * batch_size
-
-                # 2. KSS Accuracy
-                correct_kss = (rounded_kss == label).sum().item()
-                val_kss_acc_sum += correct_kss
-
-                # 3. Forecast MAE
-                forecast_mae = torch.abs(pred_forecast - future_data).mean().item()
-                val_forecast_mae_sum += forecast_mae * batch_size
-
-                # 4. Forcast MSE
-                forecast_mse = torch.nn.functional.mse_loss(pred_forecast, future_data).item()
-                val_forecast_mse_sum += forecast_mse * batch_size
-
-                # 5. Future KSS MAE
-                kss_mae_f = torch.abs(pred_kss_f - future_label).mean().item()
-                val_kss_f_mae_sum += kss_mae_f * batch_size
-
-                # 2. KSS Accuracy
-                rounded_kss_f = torch.clamp(torch.round(pred_kss_f), min=1.0, max=9.0)
-                correct_kss_f = (rounded_kss_f == future_label).sum().item()
-                val_kss_f_acc_sum += correct_kss
-
-    avg_val_loss = total_val_loss / total_batch
-    avg_kss_mae = val_kss_mae_sum / total_samples
-    avg_kss_acc = val_kss_acc_sum / total_samples # in decimal
-    avg_forecast_mae = val_forecast_mae_sum / total_samples
-    avg_forecast_rmse = math.sqrt(val_forecast_mse_sum / total_samples)
-    avg_kss_f_mae = val_kss_f_mae_sum / total_samples
-    avg_kss_f_acc = val_kss_f_acc_sum / total_samples # in decimal
-
-    # Save History
-    history['val_loss'].append(avg_val_loss)
-    history['val_kss_mae'].append(avg_kss_mae)
-    history['val_kss_acc'].append(avg_kss_acc)
-    history['val_forecast_mae'].append(avg_forecast_mae)
-    history['val_forecast_rmse'].append(avg_forecast_rmse)
-    history['val_kss_forecast_mae'].append(avg_kss_f_mae)
-    history['val_kss_forecast_acc'].append(avg_kss_f_acc)
-    print(f"Epoch [{epoch+1}/{config.EPOCH}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
-
-    if avg_val_loss < best_val_loss:
-        best_val_loss = avg_val_loss
-        # Save Model Weight
-        f_model_path = f"model/weight_{timestamp}.pth"
-        if not os.path.exists("model"):
-            os.mkdir("model")
-        torch.save(model.state_dict(), f_model_path)
-
-    # Saving Checkpoint
-    if not os.path.exists("log/checkpoint"):
-        os.makedirs("log/checkpoint")
-    f_checkpoint_path = f"log/checkpoint/checkpoint_{timestamp}.pth.tar"
-    checkpoint = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'best_val_loss': best_val_loss,
-    }
-
-    torch.save(checkpoint, f_checkpoint_path)
-        
-if not os.path.exists("log") :
-    os.mkdir("log")
-metrics = pd.DataFrame(history)
-metrics.to_csv(f"log/train_eval_{timestamp}.csv", index=False)
-
-
+model.fit(
+    series=train_target,
+    past_covariates=train_past_cov,
+    val_series=val_target,
+    val_past_covariates=val_past_cov,
+    verbose=True,
+    max_samples_per_ts=CONFIG.SAMPLE_PER_TS 
+)
