@@ -10,6 +10,6 @@ DROPOUT = 0.1
 
 # TRAINING VARIABLES
 L_RATE = 1e-3
-EPOCH = 10
+EPOCH = 5
 RANDOM_SEED = 42
 SAMPLE_PER_TS = 100 # get 1000 random windows for training
