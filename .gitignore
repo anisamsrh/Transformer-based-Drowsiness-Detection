@@ -6,5 +6,7 @@ model*
 *.db
 wandb*
 
+play*
+
 .vscode/
 __pycache__/
