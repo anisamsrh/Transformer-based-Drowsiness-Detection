@@ -128,7 +128,7 @@ def main(file):
         val_series=val_target,
         val_past_covariates=val_past_cov,
         verbose=True,
-        max_samples_per_ts=CONFIG.SAMPLE_PER_TS 
+        max_samples_per_ts=CONFIG.SAMPLE_PER_TS
     )
 
     metrics_file = f"logs/tft_run_{timestamp}/version_0/metrics.csv"

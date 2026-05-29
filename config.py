@@ -1,5 +1,5 @@
 INPUT_CHUNK_LEN = 120 # 2 MINUTES
-OUTPUT_CHUNK_LEN = 30 # 30 SECONDS
+OUTPUT_CHUNK_LEN = 10 # 30 SECONDS
 
 # MODEL VARIABLES
 BATCH_SIZE = 64
@@ -10,6 +10,6 @@ DROPOUT = 0.1
 
 # TRAINING VARIABLES
 L_RATE = 1e-3
-EPOCH = 5
+EPOCH = 100
 RANDOM_SEED = 42
-SAMPLE_PER_TS = 100 # get 1000 random windows for training
+SAMPLE_PER_TS = 1000 # change later by calculating based on inut and output optimal chunk
