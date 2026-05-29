@@ -4,3 +4,4 @@ numpy
 darts
 pytorch-lightning
 torchmetrics
+optuna
