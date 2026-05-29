@@ -1,6 +1,9 @@
 import glob
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from pytorch_lightning import Callback
+from torchmetrics import MeanAbsoluteError, MeanAbsolutePercentageError
 
 from darts import TimeSeries
 
@@ -38,3 +41,27 @@ def load_data_as_ts_list(ft, file):
         target_ts_list.append(target_ts)
         past_cov_ts_list.append(past_cov_ts)
     return target_ts_list, past_cov_ts_list
+
+def visualize_metrics(file, timestamp="00"):
+    metrics_df = pd.read_csv(f"{file}")
+    metrics_df = metrics_df.groupby("epoch").agg({
+        "train_loss": "mean",
+        "val_loss": "first"
+    }).reset_index()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(metrics_df['epoch'], metrics_df['train_loss'], 
+            label='Train Loss', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(metrics_df['epoch'], metrics_df['val_loss'], 
+            label='Validation Loss', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Loss Value', fontsize=12)
+    plt.title('Training Results: Train Loss vs Validation Loss', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    import os
+    os.makedirs("results_metrics/train", exist_ok=True)
+    image_name, _ = os.path.splitext(os.path.basename(file))
+    plt.savefig(f"results_metrics/train/{image_name}_{timestamp}.jpg", bbox_inches='tight', dpi=300)

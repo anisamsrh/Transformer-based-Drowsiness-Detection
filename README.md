@@ -6,7 +6,7 @@
     ```
 2. Install torch. If you are not using GPU (CPU only), install with
     ```bash
-    pip install torch --index-url https://download.pytorch.org/whl/cpu -y
+    pip install torch --index-url https://download.pytorch.org/whl/cpu
     ```
     If using GPU, refere to [pytorch get started](https://pytorch.org/get-started/locally/)
 3. Install requirements.txt
@@ -52,7 +52,8 @@ optuna-dashboard sqlite:///ml_tft.db
     ```bash
     python train.py
     ```
-3. The best model weight saved at __./logs/{model_name}/checkpoints_. Since it is saved as .ckpt file, to load it you can refere to test.py code on how to load it
+    If you prefere to use WANDB, add ```--wand``` flag 
+3. The best model weight saved at __./logs/{model_name}/checkpoints_. Since it is saved as .ckpt file, refere to test.py code on how to load it
 
 ## Testing
 Please note that testing also follow the same data structure

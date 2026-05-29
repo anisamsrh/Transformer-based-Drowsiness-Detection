@@ -4,6 +4,7 @@ log*
 result*
 model*
 *.db
+wandb*
 
 .vscode/
 __pycache__/

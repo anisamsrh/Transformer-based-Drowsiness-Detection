@@ -94,7 +94,7 @@ def main():
     
     periperal = file.split(".")[0]
     n_trials = int(args.n_trials)
-    timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+    timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     storage_name = f"sqlite:///ml_tft.db"
     study = optuna.create_study(
         study_name=f"h_tunning_{periperal}_{n_trials}_trials_{timestamp}", 
