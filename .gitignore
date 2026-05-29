@@ -3,6 +3,7 @@ data*
 log*
 result*
 model*
+*.db
 
 .vscode/
 __pycache__/

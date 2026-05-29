@@ -12,4 +12,4 @@ DROPOUT = 0.1
 L_RATE = 1e-3
 EPOCH = 100
 RANDOM_SEED = 42
-SAMPLE_PER_TS = 1000 # change later by calculating based on inut and output optimal chunk
+SAMPLE_PER_TS = 1000 # change later after calculating based on inut and output optimal chunk

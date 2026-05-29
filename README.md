@@ -21,8 +21,10 @@
 ## Hyperparameter Tunning
 The hyperparameter tunning iss evaluated based on **RMSE**. We are using optuna to automate this task. The default configuration is below:
 ```text
-data = mmwave_ss.csv # we treat file name as peripheral name
-n_trials = 50
+# we treat file name as peripheral name
+# change during runtime using flags
+data = mmwave_ss.csv # --data
+n_trials = 50 # --n_trials
 ```
 Start tunning by
 ```bash
@@ -50,10 +52,10 @@ optuna-dashboard sqlite:///ml_tft.db
     ```bash
     python train.py
     ```
-3. The best model weight saved at __./model__
+3. The best model weight saved at __./logs/{model_name}/checkpoints_. Since it is saved as .ckpt file, to load it you can refere to test.py code on how to load it
 
 ## Testing
-Please not, that testing also follow the same data structure
+Please note that testing also follow the same data structure
 ```text
 └── data_test
     └── 1111_1_3_4

@@ -1,11 +1,9 @@
 import argparse
 from datetime import datetime
-import glob
 import json
 import numpy as np
 import optuna
 import os
-import pandas as pd
 import torch
 
 from darts import TimeSeries
@@ -13,46 +11,13 @@ from darts.dataprocessing.transformers import Scaler
 from darts.metrics.metrics import rmse
 from darts.models import TFTModel
 
-def get_kss_score(nf) : 
-    kss = nf.split("_")
-    return float(kss[3])
-
-def apply_fixed_scaling(series, absolute_min, absolute_max):
-    scaled_series = (series - absolute_min) / (absolute_max - absolute_min)
-    return np.clip(scaled_series, 0.0, 1.0)
-
-def reverse_fixed_scaling(series, absolute_min, absolute_max):
-    unscaled_series = series * (absolute_max - absolute_min) + absolute_min
-    return unscaled_series
-
-def load_data_as_ts_list(ft, file):
-    folders = glob.glob(f"data_{ft}/*")
-    target_ts_list = []
-    past_cov_ts_list = []
-
-    for f in folders :
-        df = pd.read_csv(f"{f}/{file}")
-        df["kss_score"] = get_kss_score(f)
-        df["log_time"] = pd.to_datetime(df['log_time'])
-        df = df.set_index("log_time")
-        df = df.resample("1s").mean().interpolate(method="linear")
-        df = df.reset_index()
-
-        df["kss_score"] = apply_fixed_scaling(df["kss_score"], 1, 9)
-        df["breath_rate"] = apply_fixed_scaling(df["breath_rate"], 5, 40)
-        df["heart_rate"] = apply_fixed_scaling(df["heart_rate"], 40, 200)
-
-        target_ts = TimeSeries.from_dataframe(df, time_col="log_time", value_cols=["kss_score"])
-        past_cov_ts = TimeSeries.from_dataframe(df, time_col="log_time", value_cols=["breath_rate", "heart_rate"])
-        target_ts_list.append(target_ts)
-        past_cov_ts_list.append(past_cov_ts)
-    return target_ts_list, past_cov_ts_list
+from helper_function import load_data_as_ts_list, reverse_fixed_scaling
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--novis', action='store_false')
-    parser.add_argument('--data', type=str, default="mmwave_ss.csv")
-    parser.add_argument('--n_trials', type=str, default=50)
+    parser.add_argument('--novis', action='store_false', help="not used")
+    parser.add_argument('--data', type=str, default="mmwave_ss.csv", help="filename of source data")
+    parser.add_argument('--n_trials', type=str, default=50, help="number of trials to be done")
     args = parser.parse_args()
 
     file = args.data
@@ -128,7 +93,7 @@ def main():
         return error
     
     periperal = file.split(".")[0]
-    n_trials = args.n_trials
+    n_trials = int(args.n_trials)
     timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
     storage_name = f"sqlite:///ml_tft.db"
     study = optuna.create_study(
