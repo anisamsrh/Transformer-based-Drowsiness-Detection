@@ -27,16 +27,17 @@ def main():
         train_params = load_config(args.params)
 
     file = args.data
+    periperal = file.split(".")[0]
     train_target, train_past_cov = load_data_as_ts_list("train", file)
     val_target, val_past_cov = load_data_as_ts_list("val", file)
 
     print("-----Data Loaded-----")
 
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
-    csv_logger = CSVLogger(save_dir="logs/", name=f"tft_run_{timestamp}")
+    csv_logger = CSVLogger(save_dir="logs/", name=f"tft_{periperal}_{timestamp}")
     logger = [csv_logger]
     if args.wandb:
-        wandb_logger = WandbLogger(project="forecasting-protel", name=f"tft_model_{timestamp}")
+        wandb_logger = WandbLogger(project="forecasting-protel", name=f"tft_{periperal}_{timestamp}")
         logger.append(wandb_logger)
 
     model = TFTModel(
@@ -61,6 +62,7 @@ def main():
             "log_every_n_steps": 1
         },
         random_state=42, # seed so the experiment can be reproduced
+        model_name=f"tft_{periperal}_{timestamp}",
         work_dir="logs",
         save_checkpoints=True,
     )
@@ -76,7 +78,7 @@ def main():
         max_samples_per_ts= CONFIG.SAMPLE_PER_TS
     )
 
-    metrics_file = f"logs/tft_run_{timestamp}/version_0/metrics.csv"
+    metrics_file = f"logs/tft_{periperal}_{timestamp}/version_0/metrics.csv"
     if args.novis :
         visualize_metrics(metrics_file, timestamp)
 
