@@ -78,7 +78,7 @@ def main():
         last_points_only=False,
     )
 
-    n_pred_iterate = 1
+    n_pred_iterate = 50
     start_time = time.perf_counter()
     for _ in range(n_pred_iterate):
         pred_historical = model.historical_forecasts(
