@@ -29,7 +29,7 @@ def load_data_as_ts_list(ft, file):
         df["kss_score"] = get_kss_score(f)
         df["log_time"] = pd.to_datetime(df['log_time'])
         df = df.set_index("log_time")
-        df = df.resample("1s").mean().interpolate(method="linear")
+        df = df.resample("1s").mean().interpolate(method="linear").dropna()
         df = df.reset_index()
 
         df["kss_score"] = apply_fixed_scaling(df["kss_score"], 1, 9)

@@ -78,7 +78,7 @@ def main():
         last_points_only=False,
     )
 
-    n_pred_iterate = 50
+    n_pred_iterate = 1
     start_time = time.perf_counter()
     for _ in range(n_pred_iterate):
         pred_historical = model.historical_forecasts(
@@ -153,7 +153,9 @@ def main():
             series.plot(label=f"{label}", color="red", linestyle="--")
             plt.title(f"Real vs {label.title()}")
             plt.xlabel("Time")
-            plt.ylabel("KSS_Score")
+            plt.ylabel("KSS Score")
+            plt.ylim(0, 10)
+            plt.yticks(np.arange(1, 10, 1))
             plt.legend()
             plt.grid(True, linestyle=':', alpha=0.7)
             plt.savefig(f"{base_test_path}/{file_names[idx]}_real_vs_{label}.jpg")
@@ -171,10 +173,10 @@ def main():
 
         def plot_confussion_matrix(points_list):
             df_combined = get_df_combined(points_list)
-            all_df_combined.append(df_combined)
             
             df_combined['class_real'] = pd.cut(df_combined['kss_real'], bins=bins, labels=labels, include_lowest=True)
             df_combined['class_pred'] = pd.cut(df_combined['kss_pred'], bins=bins, labels=labels, include_lowest=True)
+            all_df_combined.append(df_combined)
 
             cm = confusion_matrix(df_combined['class_real'], df_combined['class_pred'], labels=labels)
             disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
