@@ -22,10 +22,15 @@ def main():
     train_df_list = load_data_as_df_list("train", file)
     val_df_list = load_data_as_df_list("val", file)
 
-    def create_loader(df_list):
+    def create_loader(df_list,
+        stride=1,
+        gap=0,
+        i_chunk_len=30,
+        o_chunk_len=10,
+        ):
         loader = []
         for df in df_list :
-            dataset = TimeSeriesDataset(config, df)
+            dataset = TimeSeriesDataset(df, stride=stride, gap=gap, i_chunk_len=i_chunk_len, o_chunk_len=o_chunk_len)
             loader.append(DataLoader(
                 dataset,
                 batch_size=config.BATCH_SIZE,
@@ -33,9 +38,6 @@ def main():
             )
         )
         return loader
-
-    train_loader = create_loader(train_df_list)
-    val_loader = create_loader(val_df_list)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loss_func = nn.MSELoss()
@@ -50,6 +52,12 @@ def main():
         valid_d_model = [x for x in range(16, 129, 16) if x % n_heads == 0]
         d_model = trial.suggest_categorical("d_model", valid_d_model)
 
+        train_loader = create_loader(train_df_list, i_chunk_len=seq_len)
+        val_loader = create_loader(val_df_list, i_chunk_len=seq_len)
+
+        train_loader = create_loader(train_df_list, i_chunk_len=seq_len)
+        val_loader = create_loader(val_df_list, i_chunk_len=seq_len)
+
         model = TSTPlus(
             c_in = 2,
             c_out = 1,
@@ -59,7 +67,8 @@ def main():
             fc_dropout = fc_dropout,
             d_model = d_model,
         )
-        optimizer = optim.Adam(model.parameters(), lr=config.L_RATE)
+        model.to(device)
+        optimizer = optim.Adam(model.parameters(), lr=l_rate)
 
         for epoch in range(4):
             model.train()

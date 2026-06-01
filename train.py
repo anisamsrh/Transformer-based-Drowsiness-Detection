@@ -9,6 +9,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+import config as CONFIG
+
 from custom_class import TimeSeriesDataset
 from helper_function import load_data_as_df_list, reverse_fixed_scaling
 
@@ -29,14 +31,17 @@ def main():
     periperal = file.split(".")[0]
     train_df_list = load_data_as_df_list("train", file)
     val_df_list = load_data_as_df_list("val", file)
+    train_params = {}
+    if args.params is not None:
+        train_params = load_config(args.params)
 
     def create_loader(df_list):
         loader = []
         for df in df_list :
-            dataset = TimeSeriesDataset(config, df)
+            dataset = TimeSeriesDataset(CONFIG, df)
             loader.append(DataLoader(
                 dataset,
-                batch_size=config.BATCH_SIZE,
+                batch_size=CONFIG.BATCH_SIZE,
                 shuffle=True
             )
         )
@@ -47,10 +52,16 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training using {device}")
-    model = TSTPlus(2, 1, 120).to(device)
-
+    model = TSTPlus(
+            c_in = 2,
+            c_out = 1,
+            seq_len = train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN),
+            n_layers = train_params.get("n_layers", CONFIG.N_LAYERS),
+            fc_dropout = train_params.get("fc_dropout", CONFIG.DROPOUT),
+            d_model = train_params.get("d_model", CONFIG.D_MODEL),
+        ).to(device)
     loss_func = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=config.L_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=train_params.get("learning_rate", CONFIG.L_RATE))
 
     history = {'train_loss' : [], 
            'train_kss_mae': [],
@@ -66,7 +77,7 @@ def main():
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     basepath = f"logs/{periperal}_{timestamp}"
 
-    for epoch in range(config.EPOCH):
+    for epoch in range(CONFIG.EPOCH):
         # TRAINING
         model.train()
         total_train_loss = 0.0
@@ -111,8 +122,8 @@ def main():
         history['train_kss_acc'].append(epoch_acc)
         history['train_kss_mse'].append(epoch_mse)
         
-        if args.log or epoch == config.EPOCH - 1 :
-            print(f"[Epoch {epoch+1}/{config.EPOCH}] Loss : {epoch_loss:.4f} | MAE : {epoch_mae:.4f} | MSE : {epoch_mse:.4f} | Accuracy : {epoch_acc:.4f}")
+        if args.log or epoch == CONFIG.EPOCH - 1 :
+            print(f"[Epoch {epoch+1}/{CONFIG.EPOCH}] Loss : {epoch_loss:.4f} | MAE : {epoch_mae:.4f} | MSE : {epoch_mse:.4f} | Accuracy : {epoch_acc:.4f}")
 
         # VALIDATION
         model.eval()
@@ -154,8 +165,8 @@ def main():
         history['val_kss_acc'].append(epoch_val_acc)
         history['val_kss_mse'].append(epoch_val_mse)
 
-        if args.log or epoch == config.EPOCH - 1 :
-            print(f"[Epoch {epoch+1}/{config.EPOCH}] Val Loss : {epoch_val_loss:.4f} | Val MAE : {epoch_val_mae:.4f} | Val MSE : {epoch_val_mse:.4f} | Val Accuracy : {epoch_val_acc:.4f}")
+        if args.log or epoch == CONFIG.EPOCH - 1 :
+            print(f"[Epoch {epoch+1}/{CONFIG.EPOCH}] Val Loss : {epoch_val_loss:.4f} | Val MAE : {epoch_val_mae:.4f} | Val MSE : {epoch_val_mse:.4f} | Val Accuracy : {epoch_val_acc:.4f}")
 
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
