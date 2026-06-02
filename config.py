@@ -20,3 +20,6 @@ L_RATE = 1e-3
 EPOCH = 5
 RANDOM_SEED = 42
 SAMPLE_PER_TS = 1000 # change later after calculating based on input and output optimal chunk
+
+# TEST VARIABLES
+PRED_ITERATE = 50

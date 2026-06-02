@@ -2,10 +2,9 @@ import glob
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pytorch_lightning import Callback
-from torchmetrics import MeanAbsoluteError, MeanAbsolutePercentageError
+from torch.utils.data import DataLoader
 
-from darts import TimeSeries
+from custom_class import TimeSeriesDataset
 
 def get_kss_score(nf) : 
     kss = nf.split("_")
@@ -37,3 +36,17 @@ def load_data_as_df_list(ft, file) :
 
         pd_list.append(df)
     return pd_list
+
+def create_loader(df_list, i_chunk_len, batch_size):
+    loader = []
+    for df in df_list :
+        dataset = TimeSeriesDataset(df,
+            i_chunk_len=i_chunk_len,
+        )
+        loader.append(DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True
+        )
+    )
+    return loader

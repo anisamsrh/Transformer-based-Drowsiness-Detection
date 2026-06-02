@@ -10,38 +10,31 @@ from pathlib import Path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import time
 import torch
-import torchmetrics
-
-from darts import TimeSeries
-from darts.metrics.metrics import mae, rmse, mape
-from darts.models import TFTModel
+from tsai.all import *
 
 import config as CONFIG
-from helper_function import load_data_as_ts_list, reverse_fixed_scaling
+from helper_function import load_data_as_df_list, reverse_fixed_scaling, create_loader
 
-def load_model(model_path):
-    path_obj = Path(model_path)
-    file_name = path_obj.name
-    model_name = path_obj.parent.parent.name
-    work_dir = path_obj.parent.parent.parent
-
-    print("file_name: ", file_name)
-    print("work_dir: ", work_dir)
-    print("model_name: ", model_name)
-
-    torch.serialization.add_safe_globals([
-        torch.optim.Adam,
-        torch.nn.MSELoss,
-        torchmetrics.collections.MetricCollection
-        ])
-    
-    model = TFTModel.load_from_checkpoint(
-        model_name=model_name,
-        work_dir=work_dir,
-        file_name=file_name,
+def load_model(weight_path, train_params):
+    model = TSTPlus(
+            c_in = 2,
+            c_out = 1,
+            seq_len = train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN),
+            n_layers = train_params.get("n_layers", CONFIG.N_LAYERS),
+            fc_dropout = train_params.get("fc_dropout", CONFIG.DROPOUT),
+            d_model = train_params.get("d_model", CONFIG.D_MODEL),
+            n_heads = train_params.get("n_heads", CONFIG.ATT_HEADS),
         )
-
+    
+    state_dict = torch.load(weight_path, map_location=torch.device('cpu'))
+    model.load_state_dict(state_dict)
     return model
+
+def load_config(file_path):
+    config = {}
+    with open(file_path, 'r') as f:
+        config = json.load(f)
+    return config
 
 def get_file_name(folder):
     folders_path = glob.glob(f"data_{folder}/*")
@@ -59,40 +52,20 @@ def main():
     parser.add_argument('--novis', action='store_false')
     parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--data', type=str, default="mmwave_ss.csv", help="filename of source data")
+    parser.add_argument('--params', type=str, default=None, help="training parameters")
     args = parser.parse_args()
 
     model_path = args.model
-    model = load_model(model_path)
+    train_params = load_config(args.params)
+    model = load_model(model_path, train_params)
     
     file = args.data
-    test_target, test_past_cov = load_data_as_ts_list("test", file)
+    test_df_list = load_data_as_df_list("test", file)
+    test_loader = create_loader(test_df_list, i_chunk_len=train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN), batch_size=CONFIG.BATCH_SIZE)
     file_names = get_file_name("test")
-    n_horizon = CONFIG.OUTPUT_CHUNK_LEN
-
-    pred_historical = model.historical_forecasts(
-        series = test_target,
-        past_covariates = test_past_cov,
-        forecast_horizon = n_horizon,
-        stride = 5,
-        retrain = False,
-        last_points_only=False,
-    )
-
-    n_pred_iterate = 50
-    start_time = time.perf_counter()
-    for _ in range(n_pred_iterate):
-        pred_historical = model.historical_forecasts(
-            series = test_target,
-            past_covariates = test_past_cov,
-            forecast_horizon = n_horizon,
-            stride = 5,
-            retrain = False,
-            last_points_only=False,
-        )
-    end_time = time.perf_counter()
-
-    total_windows_count = 0
-
+    
+    n_pred_iterate = CONFIG.PRED_ITERATE
+    
     results_list = []
     bins = [0, 3.1, 6.1, 9.1] 
     labels = ['Class A', 'Class B', 'Class C']
