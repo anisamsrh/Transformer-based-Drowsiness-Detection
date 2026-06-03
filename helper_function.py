@@ -40,10 +40,13 @@ def load_data_as_df_list(ft, file) :
         pd_list.append(df)
     return pd_list
 
-def load_config(file_path, trial=0):
+def load_config(file_path, trial=None):
     with open(file_path, 'r') as f:
         config = json.load(f)
-    if isinstance(config, (np.ndarray, list)) :
+    if isinstance(config, (np.ndarray, list)):
+        print(trial)
+        assert trial is not None, "must Specify param_n"
+
         chosen_config = next((x["params"] for x in config if x["trial_number"]==trial), None)
         if chosen_config is not None:
             return chosen_config

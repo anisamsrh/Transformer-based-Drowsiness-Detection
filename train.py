@@ -1,20 +1,16 @@
 import argparse
 from datetime import datetime
-import glob
-import numpy as np
 import pandas as pd
 from tsai.all import *
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
+import wandb
 
 import config as CONFIG
-
-from custom_class import TimeSeriesDataset
 from helper_function import *
 
-def main():
+def load_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--novis', action='store_false', help="chose if would not automaically generate jpg plof for training process. Default : False")
     parser.add_argument('--data', type=str, default="mmwave_ss.csv", help="filename of source data")
@@ -23,34 +19,63 @@ def main():
     parser.add_argument('--epoch', type=int, default=None, help="number of epoch")
     parser.add_argument('--log', action="store_true", help="display logging on terminal")
     args = parser.parse_args()
+    return args
+
+def init_wandb(periperal, timestamp,
+        lr=0.0001,
+    ):
+    wandb.init(
+        project="ML-PROTEL", 
+        name=f"model_{periperal}_{timestamp}",
+        config={
+            "learning_rate": lr,
+            "architecture": "TSTPlus",
+            "loss-function" : "MSELoss"
+        },
+    )
+
+def main():
+    args = load_args()
+    train_params = {}
+    if args.params is not None:
+        train_params = load_config(args.params, trial=args.param_n)
 
     file = args.data
     periperal = file.split(".")[0]
     train_df_list = load_data_as_df_list("train", file)
     val_df_list = load_data_as_df_list("val", file)
-    train_params = {}
-    if args.params is not None:
-        train_params = load_config(args.params, trial=0)
+
+    ########## LOCAL VARS ############
+    BATCH_SIZE = train_params.get("batch_size", CONFIG.BATCH_SIZE)
+    ICL = train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN)
+    N_LAYERS = train_params.get("n_layers", CONFIG.N_LAYERS)
+    DROPOUT = train_params.get("fc_dropout", CONFIG.DROPOUT)
+    D_MODEL = train_params.get("d_model", CONFIG.D_MODEL)
+    N_HEADS = train_params.get("n_heads", CONFIG.ATT_HEADS)
+    LR = train_params.get("learning_rate", CONFIG.L_RATE)
+    EPOCH = args.epoch or CONFIG.EPOCH
+    ##################################
 
     train_loader = create_big_loader(train_df_list, 
-        batch_size=train_params.get("batch_size", CONFIG.BATCH_SIZE), 
-        i_chunk_len=train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN))
+        batch_size=BATCH_SIZE, 
+        i_chunk_len=ICL)
     val_loader = create_big_loader(val_df_list, 
-        batch_size=train_params.get("batch_size", CONFIG.BATCH_SIZE), i_chunk_len=train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN))
+        batch_size=BATCH_SIZE,
+        i_chunk_len=ICL)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training using {device}")
     model = TSTPlus(
             c_in = 2,
             c_out = 1,
-            seq_len = train_params.get("seq_length", CONFIG.INPUT_CHUNK_LEN),
-            n_layers = train_params.get("n_layers", CONFIG.N_LAYERS),
-            fc_dropout = train_params.get("fc_dropout", CONFIG.DROPOUT),
-            d_model = train_params.get("d_model", CONFIG.D_MODEL),
-            n_heads = train_params.get("n_heads", CONFIG.ATT_HEADS),
+            seq_len = ICL,
+            n_layers = N_LAYERS,
+            fc_dropout = DROPOUT,
+            d_model = D_MODEL,
+            n_heads = N_HEADS,
         ).to(device)
     loss_func = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=train_params.get("learning_rate", CONFIG.L_RATE))
+    optimizer = optim.Adam(model.parameters(), lr=LR)
 
     history = {'train_loss' : [], 
            'train_kss_mae': [],
@@ -66,8 +91,9 @@ def main():
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     basepath = f"logs/{periperal}_{timestamp}"
 
-    epoch = args.epoch or CONFIG.EPOCH
-    for e in range(epoch):
+    init_wandb(periperal, timestamp, LR)
+
+    for e in range(EPOCH):
         # TRAINING
         model.train()
         total_train_loss = 0.0
@@ -112,8 +138,8 @@ def main():
         history['train_kss_acc'].append(epoch_acc)
         history['train_kss_mse'].append(epoch_mse)
         
-        if args.log or e == epoch - 1 :
-            print(f"[Epoch {e+1}/{epoch}] Loss : {epoch_loss:.4f} | MAE : {epoch_mae:.4f} | MSE : {epoch_mse:.4f} | Accuracy : {epoch_acc:.4f}")
+        if args.log or e == EPOCH - 1 :
+            print(f"[Epoch {e+1}/{EPOCH}] Loss : {epoch_loss:.4f} | MAE : {epoch_mae:.4f} | MSE : {epoch_mse:.4f} | Accuracy : {epoch_acc:.4f}")
 
         # VALIDATION
         model.eval()
@@ -154,8 +180,8 @@ def main():
         history['val_kss_acc'].append(epoch_val_acc)
         history['val_kss_mse'].append(epoch_val_mse)
 
-        if args.log or e == epoch - 1 :
-            print(f"[Epoch {e+1}/{epoch}] Val Loss : {epoch_val_loss:.4f} | Val MAE : {epoch_val_mae:.4f} | Val MSE : {epoch_val_mse:.4f} | Val Accuracy : {epoch_val_acc:.4f}")
+        if args.log or e == EPOCH - 1 :
+            print(f"[Epoch {e+1}/{EPOCH}] Val Loss : {epoch_val_loss:.4f} | Val MAE : {epoch_val_mae:.4f} | Val MSE : {epoch_val_mse:.4f} | Val Accuracy : {epoch_val_acc:.4f}")
 
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
@@ -183,11 +209,24 @@ def main():
         }
         torch.save(checkpoint, f_checkpoint_path)
 
+        wandb.log({
+            "train_loss": epoch_loss,
+            "train_kss_mae": epoch_mae,
+            "train_kss_mse": epoch_mse,
+            "train_kss_acc": epoch_acc,
+            "val_loss": epoch_val_loss,
+            "val_kss_mae": epoch_val_mae,
+            "val_kss_mse": epoch_val_mse,
+            "val_kss_acc": epoch_val_acc,
+        })
+
     metrics = pd.DataFrame(history)
     metrics.to_csv(f"{basepath}/train_eval_{timestamp}.csv", index=False)
 
     if args.novis:
         visualize_train(history, periperal, timestamp)
+
+    wandb.finish()
 
 if __name__ == "__main__":
     main()
