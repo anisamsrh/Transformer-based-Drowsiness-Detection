@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
@@ -12,6 +13,11 @@ class TimeSeriesDataset(Dataset):
         y_vals=["kss_score"]):
         self.features = data[x_vals].values
         self.labels = data[y_vals].values
+
+        # self.labels = data["kss_score"].values # use this for classification, not regression
+        # bins = [0, 3.1, 6.1, 9.1] 
+        # labels = ['Class A', 'Class B', 'Class C']
+        # self.labels = pd.cut(self.labels, bins=bins, labels=labels, include_lowest=True)
 
         self.stride = stride # offset between window, 
         self.gap = gap # offset between context and prediction
@@ -34,3 +40,12 @@ class TimeSeriesDataset(Dataset):
             torch.tensor(x, dtype=torch.float32), # [batch, seq, channel]
             torch.tensor(y_classification, dtype=torch.float32), #[batch, 1]
         )
+
+    def get_all_labels(self):
+        extracted_labels = []
+        for idx in range(len(self)):
+            actual_idx = idx * self.stride
+            y = self.labels[actual_idx + self.context_length - 1]
+            extracted_labels.append(y[0] if isinstance(y, (np.ndarray, list)) else y)
+            
+        return np.array(extracted_labels)
