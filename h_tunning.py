@@ -56,7 +56,7 @@ def main():
             model.to(device)
             optimizer = optim.Adam(model.parameters(), lr=l_rate)
 
-            for epoch in range(2):
+            for epoch in range(15):
                 model.train()
                 for (data, label) in train_loader:
                     data = data.to(device).permute(0, 2, 1)
@@ -68,7 +68,6 @@ def main():
                     loss_kss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
-                print("Fold {}, Epoch {}, Loss: {:.4f}".format(fold+1, epoch+1, loss_kss.item()))
                 
             model.eval()
             total_val_loss = 0.0

@@ -1,4 +1,6 @@
 import glob
+import json
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -38,6 +40,15 @@ def load_data_as_df_list(ft, file) :
         pd_list.append(df)
     return pd_list
 
+def load_config(file_path, trial=0):
+    with open(file_path, 'r') as f:
+        config = json.load(f)
+    if isinstance(config, (np.ndarray, list)) :
+        chosen_config = next((x["params"] for x in config if x["trial_number"]==trial), None)
+        if chosen_config is not None:
+            return chosen_config
+    return config
+
 def create_loader(df_list, i_chunk_len, batch_size):
     loader = []
     for df in df_list :
@@ -51,6 +62,16 @@ def create_loader(df_list, i_chunk_len, batch_size):
         )
     )
     return loader
+
+def create_big_loader(df_list, i_chunk_len=30, batch_size=64):
+    datasets = []
+    for df in df_list :
+        dataset = TimeSeriesDataset(df,
+            i_chunk_len=i_chunk_len,
+        )
+        datasets.append(dataset)
+    full_dataset = ConcatDataset(datasets)
+    return DataLoader(full_dataset, batch_size=batch_size, shuffle=True)
 
 def create_kfold_loaders(df_list, k_splits=5, seq_length=30, batch_size=32):
     datasets = []
@@ -97,3 +118,54 @@ def create_kfold_loaders(df_list, k_splits=5, seq_length=30, batch_size=32):
         fold_loaders.append((train_loader, val_loader))
         
     return fold_loaders
+
+################ VISUALIZATION ####################
+
+def visualize_train(history, periperal, timestamp):
+    epochs = range(1, len(history['train_loss']) + 1)
+
+    plt.figure(figsize=(16, 12))
+
+    plt.subplot(2, 2, 1)
+    plt.plot(epochs, history['train_loss'], 
+            label='Train Loss', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(epochs, history['val_loss'], 
+            label='Validation Loss', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Loss Value', fontsize=12)
+    plt.title('Training Results: Train Loss vs Validation Loss', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.subplot(2, 2, 2)
+    plt.plot(epochs, history['train_kss_mae'], label='Train MAE', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(epochs, history['val_kss_mae'], label='Validation MAE', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('MAE Value', fontsize=12)
+    plt.title('Train vs Validation MAE', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.subplot(2, 2, 3)
+    plt.plot(epochs, history['train_kss_mse'], label='Train MSE', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(epochs, history['val_kss_mse'], label='Validation MSE', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('MSE Value', fontsize=12)
+    plt.title('Train vs Validation MSE', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.subplot(2, 2, 4)
+    plt.plot(epochs, history['train_kss_acc'], label='Train Accuracy', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(epochs, history['val_kss_acc'], label='Validation Accuracy', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Accuracy', fontsize=12)
+    plt.title('Train vs Validation Accuracy', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    basepath = f"logs/{periperal}_{timestamp}"
+    os.makedirs(basepath, exist_ok=True)
+    plt.savefig(f"{basepath}/metrics.jpg", bbox_inches='tight', dpi=300)
+
