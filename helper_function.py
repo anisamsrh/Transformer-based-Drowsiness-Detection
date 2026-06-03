@@ -4,10 +4,13 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader, ConcatDataset, Subset
+from tsai.all import *
 from sklearn.model_selection import StratifiedGroupKFold
 
 from custom_class import TimeSeriesDataset
+import config as CONFIG
 
 def get_kss_score(nf) : 
     kss = nf.split("_")
@@ -40,6 +43,35 @@ def load_data_as_df_list(ft, file) :
         pd_list.append(df)
     return pd_list
 
+def load_data_as_df(file):
+    f = Path(file).parent.name
+    df = pd.read_csv(f"{file}")
+    df["kss_score"] = get_kss_score(f)
+    df["log_time"] = pd.to_datetime(df['log_time'])
+    df = df.set_index("log_time")
+    df = df.resample("1s").mean().interpolate(method="linear").dropna()
+    df = df.reset_index()
+
+    df["kss_score"] = apply_fixed_scaling(df["kss_score"], 1, 9)
+    df["breath_rate"] = apply_fixed_scaling(df["breath_rate"], 5, 40)
+    df["heart_rate"] = apply_fixed_scaling(df["heart_rate"], 40, 200)
+    return df
+
+def load_model(weight_path, train_params):
+    model = TSTPlus(
+            c_in = 2,
+            c_out = 1,
+            seq_len = train_params.get("input_chunk_length", CONFIG.INPUT_CHUNK_LEN),
+            n_layers = train_params.get("n_layers", CONFIG.N_LAYERS),
+            fc_dropout = train_params.get("fc_dropout", CONFIG.DROPOUT),
+            d_model = train_params.get("d_model", CONFIG.D_MODEL),
+            n_heads = train_params.get("n_heads", CONFIG.ATT_HEADS),
+        )
+    
+    state_dict = torch.load(weight_path, map_location=torch.device('cpu'))
+    model.load_state_dict(state_dict)
+    return model
+
 def load_config(file_path, trial=None):
     with open(file_path, 'r') as f:
         config = json.load(f)
@@ -51,6 +83,10 @@ def load_config(file_path, trial=None):
         if chosen_config is not None:
             return chosen_config
     return config
+
+def create_single_loader(df, icl, bs):
+    dataset = TimeSeriesDataset(df, i_chunk_len=icl)
+    return DataLoader(dataset, batch_size=bs, shuffle=True)
 
 def create_loader(df_list, i_chunk_len, batch_size):
     loader = []
