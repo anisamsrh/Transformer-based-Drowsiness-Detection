@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 from tsai.all import *
 from sklearn.model_selection import StratifiedGroupKFold
@@ -56,6 +57,26 @@ def load_data_as_df(file):
     df["breath_rate"] = apply_fixed_scaling(df["breath_rate"], 5, 40)
     df["heart_rate"] = apply_fixed_scaling(df["heart_rate"], 40, 200)
     return df
+
+def load_data_as_df_list_scaled(ft, file) : 
+    folders = glob.glob(f"data_{ft}/*")
+    pd_list = []
+
+    for f in folders :
+        scaler = StandardScaler()
+        df = pd.read_csv(f"{f}/{file}")
+        df["log_time"] = pd.to_datetime(df['log_time'])
+        df = df.set_index("log_time")
+        df = df.resample("1s").mean().interpolate(method="linear").dropna()
+        df = df.reset_index()
+
+        df_scaled = pd.DataFrame(scaler.fit_transform(df[["heart_rate", "breath_rate"]]), columns=["heart_rate", "breath_rate"])
+
+        df_scaled["kss_score"] = get_kss_score(f)
+        df_scaled["kss_score"] = apply_fixed_scaling(df["kss_score"], 1, 9)
+
+        pd_list.append(df_scaled)
+    return pd_list
 
 def load_model(weight_path, train_params):
     model = TSTPlus(
