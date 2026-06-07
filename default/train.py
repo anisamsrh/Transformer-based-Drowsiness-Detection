@@ -28,6 +28,7 @@ def init_wandb(periperal, timestamp,
         dr=0.1,
         dm=32,
         nh=1,
+        loss_func="MSELoss",
     ):
     wandb.init(
         project="ML-PROTEL", 
@@ -35,7 +36,7 @@ def init_wandb(periperal, timestamp,
         config={
             "learning_rate": lr,
             "architecture": "TSTPlus",
-            "loss-function" : "MSELoss",
+            "loss-function" : loss_func,
             "n_layers" : nl,
             "dropout": dr,
             "d_model": dm,
@@ -102,7 +103,7 @@ def main():
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     basepath = f"logs/{periperal}_{timestamp}"
 
-    if args.wandb : init_wandb(periperal, timestamp, LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS)
+    if args.wandb : init_wandb(periperal, timestamp, LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__)
 
     for e in range(EPOCH):
         # TRAINING
