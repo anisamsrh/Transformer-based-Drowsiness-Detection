@@ -40,8 +40,8 @@ def main():
     model.eval()
     with torch.no_grad():
         for (data, label) in test_loader:
-            data = data.to(device).permute(0, 2, 1)
-            label = label.float().to(device)
+            data = data.permute(0, 2, 1)
+            label = label.float()
             print(data.shape)
             print(label.shape)
 
@@ -61,6 +61,12 @@ def main():
             plt.title("Real vs Prediction")
             plt.xlabel("Time")
             plt.ylabel("KSS Value")
+
+            pred_series = pd.Series(kss_pred)
+            pred_series = pred_series.rolling(window=100, min_periods=1).mean()
+            plt.plot(pred_series, label="pred (smoothed)", linestyle='--', color="blue")
+
+            plt.legend()
             plt.show()
 
         vis_real_vs_pred()

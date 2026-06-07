@@ -86,7 +86,7 @@ def load_config(file_path, trial=None):
 
 def create_single_loader(df, icl, bs):
     dataset = TimeSeriesDataset(df, i_chunk_len=icl)
-    return DataLoader(dataset, batch_size=bs, shuffle=True)
+    return DataLoader(dataset, batch_size=bs, shuffle=False)
 
 def create_loader(df_list, i_chunk_len, batch_size):
     loader = []
@@ -97,7 +97,7 @@ def create_loader(df_list, i_chunk_len, batch_size):
         loader.append(DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=True
+            shuffle=False
         )
     )
     return loader
