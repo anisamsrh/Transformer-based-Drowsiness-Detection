@@ -229,6 +229,36 @@ def visualize_train(history, periperal, timestamp):
     os.makedirs(basepath, exist_ok=True)
     plt.savefig(f"{basepath}/metrics.jpg", bbox_inches='tight', dpi=300)
 
+def visualize_train_c(history, periperal, timestamp):
+    epochs = range(1, len(history['train_loss']) + 1)
+
+    plt.figure(figsize=(16, 12))
+
+    plt.subplot(2, 2, 1)
+    plt.plot(epochs, history['train_loss'], 
+            label='Train Loss', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(epochs, history['val_loss'], 
+            label='Validation Loss', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Loss Value', fontsize=12)
+    plt.title('Training Results: Train Loss vs Validation Loss', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.subplot(2, 2, 2)
+    plt.plot(epochs, history['train_kss_acc'], label='Train Accuracy', marker='o', linewidth=2, color='tab:blue')
+    plt.plot(epochs, history['val_kss_acc'], label='Validation Accuracy', marker='s', linewidth=2, color='tab:orange')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Accuracy', fontsize=12)
+    plt.title('Train vs Validation Accuracy', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    basepath = f"logs/{periperal}_{timestamp}"
+    os.makedirs(basepath, exist_ok=True)
+    plt.savefig(f"{basepath}/metrics.jpg", bbox_inches='tight', dpi=300)
+
 ################ CLASSIFICATION ##################
 
 def create_loader_tsdc(df_list, i_chunk_len, batch_size):

@@ -213,7 +213,7 @@ def main():
     metrics.to_csv(f"{basepath}/train_eval_{timestamp}.csv", index=False)
 
     if args.novis:
-        visualize_train(history, periperal, timestamp)
+        visualize_train_c(history, periperal, timestamp)
 
     if args.wandb : wandb.finish()
 
