@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, ConcatDataset, Subset
 from tsai.all import *
 from sklearn.model_selection import StratifiedGroupKFold
 
-from custom_class import TimeSeriesDataset
+from custom_class import *
 import config as CONFIG
 
 def get_kss_score(nf) : 
@@ -73,7 +73,7 @@ def load_data_as_df_list_scaled(ft, file) :
         df_scaled = pd.DataFrame(scaler.fit_transform(df[["heart_rate", "breath_rate"]]), columns=["heart_rate", "breath_rate"])
 
         df_scaled["kss_score"] = get_kss_score(f)
-        df_scaled["kss_score"] = apply_fixed_scaling(df["kss_score"], 1, 9)
+        df_scaled["kss_score"] = apply_fixed_scaling(df_scaled["kss_score"], 1, 9)
 
         pd_list.append(df_scaled)
     return pd_list
@@ -229,3 +229,18 @@ def visualize_train(history, periperal, timestamp):
     os.makedirs(basepath, exist_ok=True)
     plt.savefig(f"{basepath}/metrics.jpg", bbox_inches='tight', dpi=300)
 
+################ CLASSIFICATION ##################
+
+def create_loader_tsdc(df_list, i_chunk_len, batch_size):
+    loader = []
+    for df in df_list :
+        dataset = TSDforClassification(df,
+            i_chunk_len=i_chunk_len,
+        )
+        loader.append(DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False
+        )
+    )
+    return loader
