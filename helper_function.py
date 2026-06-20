@@ -78,6 +78,21 @@ def load_data_as_df_list_scaled(ft, file) :
         pd_list.append(df_scaled)
     return pd_list
 
+def load_data_as_df_scaled(file):
+    f = Path(file).parent.name
+    df = pd.read_csv(f"{file}")
+    df["kss_score"] = get_kss_score(f)
+    df["log_time"] = pd.to_datetime(df['log_time'])
+    df = df.set_index("log_time")
+    df = df.resample("1s").mean().interpolate(method="linear").dropna()
+    df = df.reset_index()
+
+    scaler = StandardScaler()
+    df_scaled = pd.DataFrame(scaler.fit_transform(df[["heart_rate", "breath_rate"]]), columns=["heart_rate", "breath_rate"])
+    df_scaled["kss_score"] = get_kss_score(f)
+    df_scaled["kss_score"] = apply_fixed_scaling(df_scaled["kss_score"], 1, 9)
+    return df_scaled
+
 def load_model(weight_path, train_params):
     model = TSTPlus(
             c_in = 2,
@@ -261,6 +276,10 @@ def visualize_train_c(history, periperal, timestamp):
 
 ################ CLASSIFICATION ##################
 
+def create_single_loader_tsdc(df, icl, bs):
+    dataset = TSDforClassification(df, i_chunk_len=icl)
+    return DataLoader(dataset, batch_size=bs, shuffle=False)
+
 def create_loader_tsdc(df_list, i_chunk_len, batch_size):
     loader = []
     for df in df_list :
@@ -274,3 +293,24 @@ def create_loader_tsdc(df_list, i_chunk_len, batch_size):
         )
     )
     return loader
+
+def load_model_tst(weight_path, 
+            c_out = 3,
+            seq_len = 20,
+            n_layers = 2,
+            fc_dropout = 0.1,
+            d_model = 128,
+            n_heads = 4,
+                   ):
+    model = TSTPlus(
+            c_in = 2,
+            c_out = c_out,
+            seq_len = seq_len,
+            n_layers = n_layers,
+            fc_dropout = fc_dropout,
+            d_model = d_model,
+            n_heads = n_heads,
+        )
+    state_dict = torch.load(weight_path, map_location=torch.device('cpu'))
+    model.load_state_dict(state_dict)
+    return model
