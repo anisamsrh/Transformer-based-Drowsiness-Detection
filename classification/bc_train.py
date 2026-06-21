@@ -52,8 +52,8 @@ def main():
 
     file = args.data
     periperal = file.split(".")[0]
-    train_df_list = load_data_as_df_list_scaled("train", file)
-    val_df_list = load_data_as_df_list_scaled("val", file)
+    train_df_list = load_data_as_df_list_tsdc("train", file, classes=2)
+    val_df_list = load_data_as_df_list_tsdc("val", file, classes=2)
 
     ########## LOCAL VARS ############
     BATCH_SIZE = train_params.get("batch_size", CONFIG.BATCH_SIZE)

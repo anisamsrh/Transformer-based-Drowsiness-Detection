@@ -276,6 +276,47 @@ def visualize_train_c(history, periperal, timestamp):
 
 ################ CLASSIFICATION ##################
 
+def load_data_as_df_list_tsdc(ft, file, classes=3) : 
+    folders = glob.glob(f"data_{ft}/*")
+    pd_list = []
+
+    for f in folders :
+        scaler = StandardScaler()
+        df = pd.read_csv(f"{f}/{file}")
+        df["log_time"] = pd.to_datetime(df['log_time'])
+        df = df.set_index("log_time")
+        df = df.resample("1s").mean().interpolate(method="linear").dropna()
+        df = df.reset_index()
+
+        df_scaled = pd.DataFrame(scaler.fit_transform(df[["heart_rate", "breath_rate"]]), columns=["heart_rate", "breath_rate"])
+
+        df_scaled["kss_score"] = get_kss_score(f)
+        if classes == 2 :
+            df_scaled["kss_score"] = [0 if v < 7 else 1 for v in df_scaled["kss_score"].values]
+        elif classes == 3:
+            df_scaled["kss_score"] = [0 if v <= 4 else (1 if v <=7 else 2) for v in df_scaled["kss_score"].values]
+
+        pd_list.append(df_scaled)
+    return pd_list
+
+def load_data_as_df_tsdc(file, classes=3):
+    f = Path(file).parent.name
+    df = pd.read_csv(f"{file}")
+    df["kss_score"] = get_kss_score(f)
+    df["log_time"] = pd.to_datetime(df['log_time'])
+    df = df.set_index("log_time")
+    df = df.resample("1s").mean().interpolate(method="linear").dropna()
+    df = df.reset_index()
+
+    scaler = StandardScaler()
+    df_scaled = pd.DataFrame(scaler.fit_transform(df[["heart_rate", "breath_rate"]]), columns=["heart_rate", "breath_rate"])
+    df_scaled["kss_score"] = get_kss_score(f)
+    if classes == 2 :
+        df_scaled["kss_score"] = [0 if v < 7 else 1 for v in df_scaled["kss_score"].values]
+    elif classes == 3:
+            df_scaled["kss_score"] = [0 if v <= 4 else (1 if v <=7 else 2) for v in df_scaled["kss_score"].values]
+    return df_scaled
+
 def create_single_loader_tsdc(df, icl, bs):
     dataset = TSDforClassification(df, i_chunk_len=icl)
     return DataLoader(dataset, batch_size=bs, shuffle=False)
@@ -305,7 +346,6 @@ def create_big_loader_tsdc(df_list, i_chunk_len=30, batch_size=64):
     return DataLoader(full_dataset, 
                       batch_size=batch_size, 
                       shuffle=True)
-
 
 def load_model_tst(weight_path, 
             c_out = 3,

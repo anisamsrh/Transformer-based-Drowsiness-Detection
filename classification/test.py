@@ -12,6 +12,7 @@ def load_args():
     parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--n_class', type=int, default=3, help="number of class")
     parser.add_argument('--multifile', action='store_true', help="multifile mode")
+    parser.add_argument('--params', type=str, default=None, help="training parameters")
     args = parser.parse_args()
     return args
 
@@ -32,7 +33,7 @@ def main():
     ##################################
 
     model_path = args.model
-    model = load_model(model_path,
+    model = load_model_tst(model_path,
             c_out = NUM_CLASSES, # 3 = multiclass classification
             seq_len = ICL,
             n_layers = N_LAYERS,
@@ -45,14 +46,14 @@ def main():
         file = args.data
         periperal = file.split(".")[0]
         basename = f"{periperal}"
-        test_df_list = load_data_as_df_list_scaled("test", file)
+        test_df_list = load_data_as_df_list_tsdc("test", file)
         test_loader = create_big_loader_tsdc(test_df_list, ICL, BATCH_SIZE)
     else :
         file = args.data
         _, folder, filename = file.split("/")
         basename = f"{folder.split('_')[0]}_{filename.split('.')[0]}"
         # test_df_list = load_data_as_df_list_scaled("test", file)
-        test_df = load_data_as_df_scaled(file)
+        test_df = load_data_as_df_tsdc(file)
         test_loader = create_single_loader_tsdc(test_df, ICL, BATCH_SIZE)
     
     real = []

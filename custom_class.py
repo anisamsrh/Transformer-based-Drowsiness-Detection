@@ -62,12 +62,7 @@ class TSDforClassification(Dataset):
         ):
 
         self.features = data[x_vals].values
-        if classes == 2 :
-            self.labels = [0 if v < 7 else 1 for v in data[y_vals].values]
-        elif classes == 3:
-            self.labels = [0 if v <= 4 else (1 if v <=7 else 2) for v in data[y_vals].values]
-        else :
-            raise Exception("classes should either 2 or 3")
+        self.labels = data[y_vals].values
 
         self.stride = stride # offset between window, 
         self.gap = gap # offset between context and prediction
