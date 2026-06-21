@@ -11,6 +11,7 @@ def load_args():
     parser.add_argument('--data', type=str, default="mmwave_ss.csv", help="filename of source data")
     parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--n_class', type=int, default=3, help="number of class")
+    parser.add_argument('--multifile', action='store_true', help="multifile mode")
     args = parser.parse_args()
     return args
 
@@ -20,12 +21,6 @@ def main():
     if args.params is not None:
         params = load_config(args.params, trial=args.param_n)
 
-    file = args.data
-    folder, filename = file.split("/")
-    basename = f"{folder.split('_')[0]}_{filename.split('.')[0]}"
-    # test_df_list = load_data_as_df_list_scaled("test", file)
-    test_df = load_data_as_df_scaled(file)
-
     ########## LOCAL VARS ############
     BATCH_SIZE = params.get("batch_size", CONFIG.BATCH_SIZE)
     ICL = params.get("seq_length", CONFIG.INPUT_CHUNK_LEN)
@@ -33,23 +28,32 @@ def main():
     DROPOUT = params.get("fc_dropout", CONFIG.DROPOUT)
     D_MODEL = params.get("d_model", CONFIG.D_MODEL)
     N_HEADS = params.get("n_heads", CONFIG.N_HEADS)
-    LR = params.get("learning_rate", CONFIG.L_RATE)
-    EPOCH = args.epoch or CONFIG.EPOCH
-    RANDOM_SEED = CONFIG.RANDOM_SEED
     NUM_CLASSES = args.n_class or 3
     ##################################
 
-    test_loader = create_single_loader_tsdc(test_df, ICL, BATCH_SIZE)
     model_path = args.model
-    model_params = {
-        "c_out" : NUM_CLASSES, # 3 = multiclass classification
-        "seq_len" : ICL,
-        "n_layers" : N_LAYERS,
-        "fc_dropout" : DROPOUT,
-        "d_model" : D_MODEL,
-        "n_heads" : N_HEADS,
-    }
-    model = load_model(model_path, model_params)
+    model = load_model(model_path,
+            c_out = NUM_CLASSES, # 3 = multiclass classification
+            seq_len = ICL,
+            n_layers = N_LAYERS,
+            fc_dropout = DROPOUT,
+            d_model = D_MODEL,
+            n_heads = N_HEADS,
+            )
+
+    if args.multifile :
+        file = args.data
+        periperal = file.split(".")[0]
+        basename = f"{periperal}"
+        test_df_list = load_data_as_df_list_scaled("test", file)
+        test_loader = create_big_loader_tsdc(test_df_list, ICL, BATCH_SIZE)
+    else :
+        file = args.data
+        _, folder, filename = file.split("/")
+        basename = f"{folder.split('_')[0]}_{filename.split('.')[0]}"
+        # test_df_list = load_data_as_df_list_scaled("test", file)
+        test_df = load_data_as_df_scaled(file)
+        test_loader = create_single_loader_tsdc(test_df, ICL, BATCH_SIZE)
     
     real = []
     pred = []
@@ -66,7 +70,7 @@ def main():
             real.extend(label)
             pred.extend(pred_class)
     
-    def vis_real_vs_pred():
+    def vis_real_vs_pred(real, pred):
         plt.figure(figsize=(10, 6))
         plt.plot(real, label="real")
         plt.plot(pred, label="pred")
@@ -79,7 +83,7 @@ def main():
         plt.plot(pred_series, label="pred (smoothed)", linestyle='--', color="blue")
 
         plt.legend()
-        basepath = f"test"
+        basepath = f"results/test"
         os.makedirs(basepath, exist_ok=True)
         plt.savefig(f"{basepath}/{basename}_rvp.jpg", bbox_inches='tight', dpi=300)
 
@@ -87,7 +91,7 @@ def main():
         cm = confusion_matrix(real, pred)
         disp = ConfusionMatrixDisplay(confusion_matrix=cm)
         disp.plot(cmap=plt.cm.Blues)
-        basepath = f"test"
+        basepath = f"results/test"
         os.makedirs(basepath, exist_ok=True)
         plt.savefig(f"{basepath}/{basename}_cm.jpg", bbox_inches='tight', dpi=300)
     

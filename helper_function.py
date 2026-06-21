@@ -294,6 +294,19 @@ def create_loader_tsdc(df_list, i_chunk_len, batch_size):
     )
     return loader
 
+def create_big_loader_tsdc(df_list, i_chunk_len=30, batch_size=64):
+    datasets = []
+    for df in df_list :
+        dataset = TSDforClassification(df,
+            i_chunk_len=i_chunk_len,
+        )
+        datasets.append(dataset)
+    full_dataset = ConcatDataset(datasets)
+    return DataLoader(full_dataset, 
+                      batch_size=batch_size, 
+                      shuffle=True)
+
+
 def load_model_tst(weight_path, 
             c_out = 3,
             seq_len = 20,
