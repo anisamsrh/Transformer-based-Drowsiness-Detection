@@ -116,7 +116,7 @@ def main():
         for loader in train_loader:
             for batch_idx, (data, label) in enumerate(loader):
                 data = data.to(device).permute(0, 2, 1)
-                label = label.long().to(device)
+                label = label.squeeze(1).long().to(device)
 
                 batch_size = data.size(0)
                 total_samples += batch_size
@@ -124,7 +124,7 @@ def main():
                 optimizer.zero_grad()
                 pred_kss = model(data)
 
-                loss_kss = loss_func(pred_kss, label)
+                loss_kss = loss_func(pred_kss.squeeze(-1), label)
                 loss_kss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
@@ -154,14 +154,14 @@ def main():
         for loader in val_loader:
             for batch_idx, (data, label) in enumerate(loader):
                 data = data.to(device).permute(0, 2, 1)
-                label = label.long().to(device)
+                label = label.squeeze(1).long().to(device)
 
                 batch_size = data.size(0)
                 total_samples += batch_size
 
                 with torch.no_grad():
                     pred_kss = model(data)
-                    loss_kss = loss_func(pred_kss, label)
+                    loss_kss = loss_func(pred_kss.squeeze(-1), label)
 
                     total_val_loss += loss_kss.item() * batch_size
                     pred_class = torch.argmax(pred_kss, dim=1)
