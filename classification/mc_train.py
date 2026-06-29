@@ -2,6 +2,7 @@ import argparse
 from datetime import datetime
 import pandas as pd
 import random
+from sklearn.metrics import confusion_matrix, classification_report
 from tsai.all import *
 import torch.nn as nn
 import torch.nn.functional as F
@@ -148,6 +149,8 @@ def main():
         model.eval()
         total_val_loss = 0.0
         total_val_acc = 0.0
+        all_preds = []
+        all_labels = []
 
         total_samples = 0
 
@@ -166,6 +169,9 @@ def main():
                     total_val_loss += loss_kss.item() * batch_size
                     pred_class = torch.argmax(pred_kss, dim=1)
                     total_val_acc += (pred_class == label).sum().item()
+
+                    all_preds.extend(pred_class.cpu().numpy())
+                    all_labels.extend(label.cpu().numpy())
 
         epoch_val_loss = total_val_loss / total_samples
         epoch_val_acc = total_val_acc / total_samples
@@ -208,6 +214,22 @@ def main():
             "val_loss": epoch_val_loss,
             "val_kss_acc": epoch_val_acc,
         })
+            
+        cm = confusion_matrix(all_labels, all_preds)
+        print("Confusion Matrix")
+        print(cm)
+        cr = classification_report(all_labels, all_preds, zero_division=0)
+        print("Classification Report")
+        print(cr)
+
+        report_path = f"{basepath}/report.txt"
+        with open(report_path, "w") as f:
+            f.write(f"Epoch : {EPOCH} \n\n")
+            f.write("Confusion Matrix \n")
+            f.write(np.array2string(cm, separator=", "))
+            f.write("\n\n")
+            f.write("Classification Report \n")
+            f.write(cr)
 
     metrics = pd.DataFrame(history)
     metrics.to_csv(f"{basepath}/train_eval_{timestamp}.csv", index=False)
