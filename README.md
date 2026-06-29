@@ -17,6 +17,10 @@
     ```bash
     pip install optuna-dashboard
     ```
+5. If you want to run a file from folder, run this first
+    ```bash
+    export PYTHONPATH="$PWD:$PYTHONPATH"
+    ```
 
 ## Hyperparameter Tunning
 The hyperparameter tunning iss evaluated based on **RMSE**. We are using optuna to automate this task. The default configuration is below:

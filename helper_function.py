@@ -300,7 +300,6 @@ def load_data_as_df_list_tsdc_minmax(ft, file, classes=3) :
         pd_list.append(df)
     return pd_list
 
-
 def load_data_as_df_list_tsdc(ft, file, classes=3) : 
     folders = glob.glob(f"data_{ft}/*")
     pd_list = []
@@ -371,6 +370,53 @@ def create_big_loader_tsdc(df_list, i_chunk_len=30, batch_size=64):
     return DataLoader(full_dataset, 
                       batch_size=batch_size, 
                       shuffle=True)
+
+def create_kfold_loaders_tsdc(df_list, k_splits=5, seq_length=30, batch_size=32):
+    datasets = []
+    all_labels = []
+    all_groups = []
+    
+    for file_id, df in enumerate(df_list):
+        dataset = TSDforClassification(
+            df,
+            i_chunk_len=seq_length
+        )
+        if len(dataset) == 0:
+            continue
+            
+        datasets.append(dataset)
+        
+        labels = dataset.get_all_labels()
+        all_labels.extend(labels)
+        all_groups.extend([file_id] * len(dataset))
+        
+    full_dataset = ConcatDataset(datasets)
+    
+    X_dummy = np.zeros(len(full_dataset)) # SGKF only need data length, not the real feature
+    groups = np.array(all_groups)
+
+    bins = [0, 0.3751, 0.751, 1.1] 
+    y_stratify = np.digitize(all_labels, bins)
+    y_reg = np.array(all_labels)
+
+    # print(X_dummy)
+    # print(y_stratify)
+    # print(y_reg)
+    # print(groups)
+
+    sgkf = StratifiedGroupKFold(n_splits=k_splits)
+    fold_loaders = []
+    for train_idx, val_idx in sgkf.split(X_dummy, y_stratify, groups):
+        train_subset = Subset(full_dataset, train_idx)
+        val_subset = Subset(full_dataset, val_idx)
+        
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+        
+        fold_loaders.append((train_loader, val_loader))
+        
+    return fold_loaders
+
 
 def load_model_tst(weight_path, 
             c_out = 3,

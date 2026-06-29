@@ -85,3 +85,12 @@ class TSDforClassification(Dataset):
             torch.tensor(x, dtype=torch.float32), # [batch, seq, channel]
             torch.tensor(y, dtype=torch.long), #[batch, 1]
         )
+    
+    def get_all_labels(self): #for k-folds
+        extracted_labels = []
+        for idx in range(len(self)):
+            actual_idx = idx * self.stride
+            y = self.labels[actual_idx + self.context_length - 1]
+            extracted_labels.append(y[0] if isinstance(y, (np.ndarray, list)) else y)
+            
+        return np.array(extracted_labels)
