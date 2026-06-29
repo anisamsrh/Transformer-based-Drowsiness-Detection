@@ -276,6 +276,31 @@ def visualize_train_c(history, periperal, timestamp):
 
 ################ CLASSIFICATION ##################
 
+def load_data_as_df_list_tsdc_minmax(ft, file, classes=3) : 
+    folders = glob.glob(f"data_{ft}/*")
+    pd_list = []
+
+    for f in folders :
+        scaler = StandardScaler()
+        df = pd.read_csv(f"{f}/{file}")
+        df["log_time"] = pd.to_datetime(df['log_time'])
+        df = df.set_index("log_time")
+        df = df.resample("1s").mean().interpolate(method="linear").dropna()
+        # df = df.reset_index()
+
+        df["breath_rate"] = apply_fixed_scaling(df["breath_rate"], 5, 40)
+        df["heart_rate"] = apply_fixed_scaling(df["heart_rate"], 40, 200)
+
+        df["kss_score"] = get_kss_score(f)
+        if classes == 2 :
+            df["kss_score"] = [0 if v < 7 else 1 for v in df["kss_score"].values]
+        elif classes == 3:
+            df["kss_score"] = [0 if v <= 4 else (1 if v <=7 else 2) for v in df["kss_score"].values]
+
+        pd_list.append(df)
+    return pd_list
+
+
 def load_data_as_df_list_tsdc(ft, file, classes=3) : 
     folders = glob.glob(f"data_{ft}/*")
     pd_list = []
