@@ -11,6 +11,7 @@ import wandb
 
 import config as CONFIG
 from helper_function import *
+from helper_data import *
 
 def load_args():
     parser = argparse.ArgumentParser()
@@ -124,6 +125,10 @@ def main():
 
                 optimizer.zero_grad()
                 pred_kss = model(data)
+
+                # data augmentation
+                # data = augment_ts(data, jitter_std=0.05, scale_std=0.1, prob=0.5)
+                # data = augment_tsa(data, p_mask=0.2, p_crop=0.2, p_warp=0.2, p_noise=0.2, p_scale=0.2)
 
                 loss_kss = loss_func(pred_kss.squeeze(-1), label)
                 loss_kss.backward()
