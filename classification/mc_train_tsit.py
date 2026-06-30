@@ -33,7 +33,8 @@ def init_wandb(periperal, timestamp,
         loss_func="CrossEntropyLoss",
     ):
     wandb.init(
-        project="PROTEL_ABLATION_MODEL", 
+        project="PROTEL_ABLATION_EXPERIMENT", 
+        group="ablation study model",
         name=f"TSiT_{periperal}_{timestamp}",
         config={
             "learning_rate": lr,
@@ -214,11 +215,26 @@ def main():
         }
         torch.save(checkpoint, f_checkpoint_path)
 
-        if args.wandb : wandb.log({
+        class_names = ["alert", "sleepy", "drowsy"]
+        
+        if args.wandb : 
+            cr = classification_report(all_labels, all_preds, zero_division=0, target_names=class_names, output_dict=True)
+            df_report = pd.DataFrame(cr).transpose()
+            df_report.reset_index(inplace=True)
+            df_report.columns = ['class', 'precision', 'recall', 'f1-score', 'support']
+            
+            wandb.log({
             "train_loss": epoch_loss,
             "train_kss_acc": epoch_acc,
             "val_loss": epoch_val_loss,
             "val_kss_acc": epoch_val_acc,
+            "confusion_matrix": wandb.plot.confusion_matrix(
+                probs=None,
+                y_true=all_labels,
+                preds=all_preds,
+                class_names=class_names,
+            ),
+            "classification_report": wandb.Table(dataframe=df_report)
         })
             
         cm = confusion_matrix(all_labels, all_preds)
