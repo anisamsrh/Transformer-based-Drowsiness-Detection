@@ -38,7 +38,7 @@ def init_wandb(periperal, timestamp,
         name=f"PatchTST_{periperal}_{timestamp}",
         config={
             "learning_rate": lr,
-            "architecture": "TSTPlus",
+            "architecture": "PatchTST",
             "loss-function" : loss_func,
             "n_layers" : nl,
             "dropout": dr,

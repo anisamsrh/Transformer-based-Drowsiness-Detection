@@ -34,10 +34,10 @@ def init_wandb(periperal, timestamp,
     ):
     wandb.init(
         project="PROTEL_ABLATION_MODEL", 
-        name=f"TSiT_{periperal}_{timestamp}",
+        name=f"TSPerceiver_{periperal}_{timestamp}",
         config={
             "learning_rate": lr,
-            "architecture": "TSiT",
+            "architecture": "TSPerceiver",
             "loss-function" : loss_func,
             "n_layers" : nl,
             "dropout": dr,
