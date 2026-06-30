@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
+from tsai.all import PatchTST
+import torch.nn as nn
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, data, 
@@ -94,3 +96,34 @@ class TSDforClassification(Dataset):
             extracted_labels.append(y[0] if isinstance(y, (np.ndarray, list)) else y)
             
         return np.array(extracted_labels)
+
+class PatchTSTClassification(nn.Module):
+    def __init__(self, 
+                c_in = 2,
+                c_out = 3, # 3 = multiclass classification
+                seq_len = 120,
+                n_layers = 2,
+                dropout = 0.1,
+                d_model = 512,
+                n_heads = 8,
+                patch_len = 16,):
+        super().__init__()
+
+        self.patchtst = PatchTST(
+            c_in = c_in,
+            c_out = c_out,
+            seq_len = seq_len,
+            n_layers = n_layers,
+            dropout = dropout,
+            d_model = d_model,
+            n_heads = n_heads,
+            patch_len = 16,
+            )
+        
+        self.classifier = nn.Linear(c_in * seq_len, c_out)
+        
+    def forward(self, x):
+        out = self.patchtst(x) 
+        out = out.view(out.size(0), -1) 
+        out = self.classifier(out)
+        return out
