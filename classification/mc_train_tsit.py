@@ -33,8 +33,8 @@ def init_wandb(periperal, timestamp,
         loss_func="CrossEntropyLoss",
     ):
     wandb.init(
-        project="ML-PROTEL", 
-        name=f"model_{periperal}_{timestamp}",
+        project="PROTEL_ABLATION_MODEL", 
+        name=f"TSiT_{periperal}_{timestamp}",
         config={
             "learning_rate": lr,
             "architecture": "TSTPlus",
@@ -80,13 +80,13 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training using {device}")
-    model = TSTPlus(
+    model = TSiT(
             c_in = 2,
             c_out = NUM_CLASSES, # 3 = multiclass classification
             seq_len = ICL,
-            n_layers = N_LAYERS,
-            fc_dropout = DROPOUT,
+            depth = N_LAYERS,
             dropout = DROPOUT,
+            fc_dropout = DROPOUT,
             d_model = D_MODEL,
             n_heads = N_HEADS,
         ).to(device)
