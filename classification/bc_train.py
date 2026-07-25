@@ -55,7 +55,7 @@ def main():
 
     file = args.data
     periperal = file.split(".")[0]
-    train_df_list = load_data_as_df_list_tsdc("train", file, classes=2)
+    train_df_list = load_data_as_df_list_tsdc_minmax("train", file, classes=2, filter=[22009, 22020, 22026, 22034, 22041, 22054, 23008, 23051, 23056, 24059])
     val_df_list = load_data_as_df_list_tsdc("val", file, classes=2)
 
     ########## LOCAL VARS ############
@@ -202,7 +202,7 @@ def main():
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
 
-            esp_counter = 0
+            if args.es: esp_counter = 0
 
             f_model_path = f"{basepath}/models/best_weight.pth"
             os.makedirs(f"{basepath}/models", exist_ok=True)
@@ -218,9 +218,10 @@ def main():
             }
             torch.save(checkpoint, f_checkpoint_path)
         else:
-            esp_counter += 1
-            if esp_counter >= esp:
-                break
+            if args.es:
+                esp_counter += 1
+                if esp_counter >= esp:
+                    break
         
         os.makedirs(f"{basepath}/checkpoints", exist_ok=True)
         f_checkpoint_path = f"{basepath}/checkpoints/last-epoch.pth.tar"

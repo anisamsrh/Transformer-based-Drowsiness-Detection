@@ -276,8 +276,13 @@ def visualize_train_c(history, periperal, timestamp):
 
 ################ CLASSIFICATION ##################
 
-def load_data_as_df_list_tsdc_minmax(ft, file, classes=3) : 
-    folders = glob.glob(f"data_{ft}/*")
+def load_data_as_df_list_tsdc_minmax(ft, file, classes=3, filter=[]) : 
+    if len(filter) == 0:
+        folders = glob.glob(f"data_{ft}/*")
+    else:
+        folders = [f for f in glob.glob(f"data_{ft}/*") 
+                    if any(str(keyword) in Path(f).name for keyword in filter)
+                    ]
     pd_list = []
 
     for f in folders :
