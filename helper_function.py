@@ -278,9 +278,9 @@ def visualize_train_c(history, periperal, timestamp):
 
 def load_data_as_df_list_tsdc_minmax(ft, file, classes=3, filter=[]) : 
     if len(filter) == 0:
-        folders = glob.glob(f"data_{ft}/*")
+        folders = glob.glob(f"{ft}/*")
     else:
-        folders = [f for f in glob.glob(f"data_{ft}/*") 
+        folders = [f for f in glob.glob(f"{ft}/*") 
                     if any(str(keyword) in Path(f).name for keyword in filter)
                     ]
     pd_list = []
@@ -292,6 +292,18 @@ def load_data_as_df_list_tsdc_minmax(ft, file, classes=3, filter=[]) :
         df = df.set_index("log_time")
         df = df.resample("1s").mean().interpolate(method="linear").dropna()
         # df = df.reset_index()
+
+        df['delta_hr'] = df['heart_rate'].diff().abs()
+        batas_fisiologis = 10 
+        kondisi_spike = df['delta_hr'] > batas_fisiologis
+        kondisi_drop = (df['heart_rate'] < 40) | (df['heart_rate'] > 190)
+        df['hr_clean'] = df['heart_rate'].copy()
+        df.loc[kondisi_spike | kondisi_drop, 'hr_clean'] = np.nan
+        df['hr_clean'] = df['hr_clean'].interpolate(method='linear')
+
+        from scipy.signal import medfilt
+        df["heart_rate"] = medfilt(df["hr_clean"], kernel_size=5)
+        df["breath_rate"] = medfilt(df["hr_clean"], kernel_size=5)
 
         df["breath_rate"] = apply_fixed_scaling(df["breath_rate"], 5, 40)
         df["heart_rate"] = apply_fixed_scaling(df["heart_rate"], 40, 200)

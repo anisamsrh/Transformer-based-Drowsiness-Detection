@@ -21,6 +21,7 @@ def load_args():
     parser.add_argument('--wandb', action="store_true", help="activate logging to wandb")
     parser.add_argument('--epoch', type=int, default=None, help="number of epoch")
     parser.add_argument('--log', action="store_true", help="display logging on terminal")
+    parser.add_argument('--notes', type=str, default="training", help="notes for the experiment")
     args = parser.parse_args()
     return args
 
@@ -54,8 +55,8 @@ def main():
 
     file = args.data
     periperal = file.split(".")[0]
-    train_df_list = load_data_as_df_list_tsdc("train", file)
-    val_df_list = load_data_as_df_list_tsdc("val", file)
+    train_df_list = load_data_as_df_list_tsdc_minmax("data_train", file, filter=["22009_2", "22009_3", "22020_1", "22020_3", "22026_1", "22026_2", "22034_1", "22041_1", "22041_3", "22045_3", "22047_1", "22047_1", "22048_1", "22048_1", "22054_3", "22056_1", "22056_3", "22064_2", "22066_1", "22066_3", "22U_1", "22U_3", "22U_3", "23008_1", "23008_3", "23015_1", "23015_1", "23028_1", "23028_3", "23032_1", "23032_1", "23032_3", "23051_1", "23051_3", "23066_1", "23066_3", "23069_1", "23069_3", "23070_3", "23070_1", "23070_3", "24015_1", "24015_3", "24020_3", "24038_1", "24038_3", "24051_2", "24051_1", "24059_3", "24070_1", "24070_3", "24071_1", "24071_2", "24071_3", "24088_1", "24088_1", "25116_1", "25116_1", "25116_3"])
+    val_df_list = load_data_as_df_list_tsdc_minmax("data_val", file, filter=["22014_2", "22014_1", "22014_3", "22015_1", "22015_1", "22015_3", "22038_1", "22038_1", "22038_3", "23009_1", "23009_1", "23009_3", "23056_2", "23056_2", "23056_3"])
 
     ########## LOCAL VARS ############
     BATCH_SIZE = train_params.get("batch_size", CONFIG.BATCH_SIZE)
@@ -103,7 +104,9 @@ def main():
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     basepath = f"logs/{periperal}_{timestamp}"
 
-    if args.wandb : init_wandb(periperal, timestamp, LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__)
+    if args.wandb : 
+        init_wandb(periperal, timestamp, LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__)
+        wandb.run.notes = args.notes
 
     for e in range(EPOCH):
         # TRAINING

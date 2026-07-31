@@ -66,7 +66,7 @@ class TSDforClassification(Dataset):
         self.features = data[x_vals].values
         self.labels = data[y_vals].values
 
-        self.stride = stride # offset between window, 
+        self.stride = stride # offset between the beginning of each window, 
         self.gap = gap # offset between context and prediction
         self.context_length = i_chunk_len
         self.prediction_length = o_chunk_len
@@ -96,6 +96,41 @@ class TSDforClassification(Dataset):
             extracted_labels.append(y[0] if isinstance(y, (np.ndarray, list)) else y)
             
         return np.array(extracted_labels)
+
+class PreprocessedDataset(Dataset):
+    def __init__(self, npz_path):
+        data = np.load(npz_path)
+        self.X_seq = data['X_seq']
+        self.X_tab = data['X_tab']
+        self.y = data['y']
+        self.id = data['id'] if 'id' in data else None
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        seq = torch.tensor(self.X_seq[idx], dtype=torch.float32)
+        tab = torch.tensor(self.X_tab[idx], dtype=torch.float32)
+        label = torch.tensor(self.y[idx], dtype=torch.long)
+        seq = seq.permute(1, 0) 
+        if self.id is not None:
+            return seq, tab, label, self.id[idx]
+        else:
+            return seq, tab, label
+
+class LOGODataset(Dataset):
+    def __init__(self, X_sec, X_tab, y):
+        self.X_sec = torch.tensor(X_sec, dtype=torch.float32)
+        self.X_tab = torch.tensor(X_tab, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        seq = self.X_sec[idx]
+        seq = seq.permute(1, 0)
+        return seq, self.X_tab[idx], self.y[idx]
 
 class PatchTSTClassification(nn.Module):
     def __init__(self, 
