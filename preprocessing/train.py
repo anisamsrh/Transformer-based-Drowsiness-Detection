@@ -48,7 +48,7 @@ def init_wandb(subject_id, periperal, timestamp,
     wandb.init(
         project=project_name, 
         name=f"LOSO_{subject_id}",
-        group="LOSO_Experiment_v1",
+        group="Delta_KSS",
         job_type=job_type,
         config={
             "learning_rate": lr,
@@ -149,6 +149,12 @@ def main():
                        LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__,
                        job_type="train_fold")
             wandb.run.notes = args.notes
+            class_weight = {
+                "awake": safe_weights[0],
+                "drowsy": safe_weights[1],
+                "sleep": safe_weights[2]
+            }
+            wandb.config.update({"class_weights":class_weight})
 
         for e in range(EPOCH):
             # TRAINING
@@ -214,9 +220,9 @@ def main():
                     # _, preds = torch.max(outputs, 1)
                     probs = F.softmax(pred_label, dim=1)
 
-                    fold_y_pred.extend(pred_class.numpy())
-                    fold_y_true.extend(label.numpy())
-                    fold_y_prob.extend(probs.numpy())
+                    fold_y_pred.extend(pred_class.cpu().numpy())
+                    fold_y_true.extend(label.cpu().numpy())
+                    fold_y_prob.extend(probs.cpu().numpy())
 
             if e == EPOCH - 1:
                 all_y_true.extend(fold_y_true)
@@ -294,7 +300,6 @@ def main():
                     })
 
         if args.wandb : wandb.finish()
-        break
 
     if args.wandb : 
         subject_id = "Global"

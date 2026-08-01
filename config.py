@@ -12,9 +12,9 @@ ATT_HEADS = 4
 DROPOUT = 0.1
 
 # OTHER MODEL VARIABLES
-N_LAYERS = 3
-D_MODEL = 64 #64 / 128 optional
-N_HEADS = 8 # 8/16 optional
+N_LAYERS = 2 #  optional
+D_MODEL = 32 #64 / 128 optional
+N_HEADS = 2 # 8/16 optional
 
 # TRAINING VARIABLES
 L_RATE = 1e-4
