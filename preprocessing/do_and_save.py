@@ -44,7 +44,9 @@ def do_cleaning_scaling(df):
     df["heart_rate"] = medfilt(df["hr_clean"], kernel_size=5)
     df["breath_rate"] = medfilt(df["br_clean"], kernel_size=5)
 
-    df_scaled = pd.DataFrame(scaler.fit_transform(df[["heart_rate", "breath_rate"]]), columns=["heart_rate", "breath_rate"])
+    df_scaled = pd.DataFrame()
+    df_scaled["heart_rate"] = df["heart_rate"]
+    df_scaled["breath_rate"] = df["breath_rate"]
     df_scaled["timestamp"] = df["log_time"]
     df_scaled["delta_hr"] = df["delta_hr"]
     df_scaled["delta_br"] = df["delta_br"]
@@ -173,7 +175,8 @@ file = "mmwave_ss.csv"
 save_path = "data_ready"
 os.makedirs(save_path, exist_ok=True)
 
-train_df_list = load_data("data", file)
+train_df_list = load_data_as_df_list_tsdc("data", file)
+# train_df_list = load_data("data", file)
 X_sequence, X_tabular, y_labels, ids = do_windowing(train_df_list)
 np.savez(f"{save_path}/train.npz", X_seq=X_sequence, X_tab=X_tabular, y=y_labels, id=ids)
 
