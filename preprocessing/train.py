@@ -43,12 +43,13 @@ def init_wandb(subject_id, periperal, timestamp,
             dm=32,
             nh=1,
             loss_func="CrossEntropyLoss",
+            weight_decay=1e-4,
             job_type="train"
     ):
     wandb.init(
         project=project_name, 
         name=f"LOSO_{subject_id}",
-        group="Delta_KSS",
+        group="LOSO_Evaluation_v3",
         job_type=job_type,
         config={
             "learning_rate": lr,
@@ -58,6 +59,7 @@ def init_wandb(subject_id, periperal, timestamp,
             "dropout": dr,
             "d_model": dm,
             "n_heads": nh,
+            "weight_decay": weight_decay,
         },
     )
 
@@ -78,6 +80,7 @@ def main():
     D_MODEL = train_params.get("d_model", CONFIG.D_MODEL)
     N_HEADS = train_params.get("n_heads", CONFIG.N_HEADS)
     LR = train_params.get("learning_rate", CONFIG.L_RATE)
+    WD = train_params.get("weight_decay", CONFIG.WEIGHT_DECAY)
     EPOCH = args.epoch or CONFIG.EPOCH
     RANDOM_SEED = CONFIG.RANDOM_SEED
     NUM_CLASSES = 3
@@ -133,7 +136,7 @@ def main():
                 n_heads = N_HEADS,
             ).to(device)
         loss_func = nn.CrossEntropyLoss(weight=class_weights_tensor) # CrossEntropyLoss for multiclass classification
-        optimizer = optim.Adam(model.parameters(), lr=LR)
+        optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
 
         # history = {'train_loss' : [], 
             # 'train_kss_acc': [],
@@ -146,7 +149,7 @@ def main():
         if args.wandb : 
             project_name="LOSO_Evaluation"
             init_wandb(subject_id, periperal, timestamp, project_name,
-                       LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__,
+                       LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__, weight_decay=WD,
                        job_type="train_fold")
             wandb.run.notes = args.notes
             class_weight = {
@@ -305,7 +308,7 @@ def main():
         subject_id = "Global"
         project_name="LOSO_Evaluation"
         init_wandb(subject_id, periperal, timestamp, project_name,
-                    LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__,
+                    LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__, weight_decay=WD,
                     job_type="global_eval")
         wandb.run.notes = args.notes
 

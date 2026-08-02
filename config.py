@@ -13,11 +13,14 @@ DROPOUT = 0.1
 
 # OTHER MODEL VARIABLES
 N_LAYERS = 2 #  optional
-D_MODEL = 32 #64 / 128 optional
+D_MODEL = 16 #64 / 128 optional
 N_HEADS = 2 # 8/16 optional
 
 # TRAINING VARIABLES
+BATCH_SIZE = 128
+DROPOUT = 0.3
 L_RATE = 1e-4
+WEIGHT_DECAY = 1e-4
 EPOCH = 5
 RANDOM_SEED = 42
 SAMPLE_PER_TS = 1000 # change later after calculating based on input and output optimal chunk
