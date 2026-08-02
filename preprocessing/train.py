@@ -43,13 +43,13 @@ def init_wandb(subject_id, periperal, timestamp,
             dm=32,
             nh=1,
             loss_func="CrossEntropyLoss",
-            weight_decay=1e-4,
+            weight_decay=0.0,
             job_type="train"
     ):
     wandb.init(
         project=project_name, 
         name=f"LOSO_{subject_id}",
-        group="LOSO_Evaluation_v3",
+        group="LOSO_Evaluation_v4",
         job_type=job_type,
         config={
             "learning_rate": lr,
@@ -87,6 +87,9 @@ def main():
     ##################################
 
     random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    torch.cuda.manual_seed_all(RANDOM_SEED)
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     basepath = f"logs/{periperal}_{timestamp}"
 
@@ -175,6 +178,7 @@ def main():
                 batch_size = data_seq.size(0)
                 total_samples += batch_size
 
+                optimizer.zero_grad() 
                 pred_label = model(data)
                 loss = loss_func(pred_label.squeeze(-1), label)
                 loss.backward()
