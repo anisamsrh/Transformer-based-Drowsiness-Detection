@@ -48,8 +48,8 @@ def init_wandb(subject_id, periperal, timestamp,
     ):
     wandb.init(
         project=project_name, 
-        name=f"LOSO_{subject_id}",
-        group="LOSO_Evaluation_v4",
+        name=f"LSTM_{subject_id}",
+        group="LSTM_Experiment_v1",
         job_type=job_type,
         config={
             "learning_rate": lr,
