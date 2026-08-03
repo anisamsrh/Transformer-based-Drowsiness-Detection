@@ -156,7 +156,7 @@ class AttentionLayer(nn.Module):
         output = x * a
         return torch.sum(output, dim=1) # Hasil akhir: (batch_size, hidden_dim)
 
-class Hybrid_CNN_BiLSTM_Attention(nn.Module):
+class Hybrid_CNN_BiLSTM_Attention2(nn.Module):
     def __init__(self, c_in, tab_in, c_out=3, d_model=64, dropout=0.3):
         super(Hybrid_CNN_BiLSTM_Attention, self).__init__()
         
@@ -221,4 +221,58 @@ class Hybrid_CNN_BiLSTM_Attention(nn.Module):
         logits = self.classifier(fused_features)
         
         # Kembalikan logits mentah karena kamu menggunakan nn.CrossEntropyLoss
+        return logits
+
+class Hybrid_CNN_BiLSTM_Attention(nn.Module):
+    # d_model diturunkan default-nya ke 32, dropout dinaikkan ke 0.5
+    def __init__(self, c_in, tab_in, c_out=3, d_model=32, dropout=0.5):
+        super(Light_Hybrid_Fusion, self).__init__()
+        
+        # === Blok CNN (Lebih Ramping + BatchNorm) ===
+        self.conv1 = nn.Conv1d(in_channels=c_in, out_channels=d_model, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm1d(d_model)
+        self.pool1 = nn.MaxPool1d(kernel_size=2)
+        
+        # Hanya gunakan 2 lapis CNN, atau bahkan bisa dikurangi jadi 1 jika masih overfit
+        self.conv2 = nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm1d(d_model)
+        self.pool2 = nn.MaxPool1d(kernel_size=2)
+        self.dropout_cnn = nn.Dropout(dropout)
+
+        # === Blok BiLSTM (Dipangkas jadi 1 Lapis saja) ===
+        self.lstm = nn.LSTM(input_size=d_model, hidden_size=d_model, num_layers=1, batch_first=True, bidirectional=True)
+        self.dropout_lstm = nn.Dropout(dropout)
+
+        # === Mekanisme Attention ===
+        self.attention = AttentionLayer(hidden_dim=d_model*2)
+
+        # === Lapisan Ekstraksi Fitur Temporal ===
+        self.fc_temporal_features = nn.Linear(d_model*2, d_model)
+        
+        # === Lapisan Klasifikasi Akhir ===
+        self.classifier = nn.Linear(d_model + tab_in, c_out)
+
+    def forward(self, x_seq, x_tab):
+        # 1. Pemrosesan Sekuensial
+        x = x_seq.transpose(1, 2)
+        
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.pool1(x)
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.pool2(x)
+        x = self.dropout_cnn(x)
+
+        x = x.transpose(1, 2)
+
+        x, _ = self.lstm(x)
+        x = self.dropout_lstm(x)
+
+        x = self.attention(x)
+        temporal_features = F.relu(self.fc_temporal_features(x))
+
+        # 2. Fusi dengan Tabular
+        fused_features = torch.cat((temporal_features, x_tab), dim=1)
+
+        # 3. Klasifikasi
+        logits = self.classifier(fused_features)
         return logits
