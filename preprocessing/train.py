@@ -128,15 +128,14 @@ def main():
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-        model = TSTPlus(
-                c_in = 6,
-                c_out = NUM_CLASSES, # 3 = multiclass classification
-                seq_len = ICL,
-                n_layers = N_LAYERS,
-                fc_dropout = DROPOUT,
-                dropout = DROPOUT,
-                d_model = D_MODEL,
-                n_heads = N_HEADS,
+        TAB_FEATURES_COUNT = X_tab_train.shape[1]
+
+        model = Hybrid_CNN_BiLSTM_Attention(
+                c_in = 6, 
+                tab_in = TAB_FEATURES_COUNT,
+                c_out = NUM_CLASSES, # 3 = Awake, Drowsy, Sleep
+                d_model = D_MODEL,   # Konfigurasi referensi menggunakan 64
+                dropout = DROPOUT
             ).to(device)
         loss_func = nn.CrossEntropyLoss(weight=class_weights_tensor) # CrossEntropyLoss for multiclass classification
         optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
@@ -179,7 +178,7 @@ def main():
                 total_samples += batch_size
 
                 optimizer.zero_grad() 
-                pred_label = model(data)
+                pred_label = model(data, data_tab)
                 loss = loss_func(pred_label.squeeze(-1), label)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -219,7 +218,7 @@ def main():
                 total_samples += batch_size
 
                 with torch.no_grad():
-                    pred_label = model(data)
+                    pred_label = model(data, data_tab)
                     loss = loss_func(pred_label.squeeze(-1), label)
                     total_val_loss += loss.item() * batch_size
 

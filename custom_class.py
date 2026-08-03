@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
+import torch.nn.functional as F
 from tsai.all import PatchTST
 import torch.nn as nn
 
@@ -97,27 +98,6 @@ class TSDforClassification(Dataset):
             
         return np.array(extracted_labels)
 
-class PreprocessedDataset(Dataset):
-    def __init__(self, npz_path):
-        data = np.load(npz_path)
-        self.X_seq = data['X_seq']
-        self.X_tab = data['X_tab']
-        self.y = data['y']
-        self.id = data['id'] if 'id' in data else None
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        seq = torch.tensor(self.X_seq[idx], dtype=torch.float32)
-        tab = torch.tensor(self.X_tab[idx], dtype=torch.float32)
-        label = torch.tensor(self.y[idx], dtype=torch.long)
-        seq = seq.permute(1, 0) 
-        if self.id is not None:
-            return seq, tab, label, self.id[idx]
-        else:
-            return seq, tab, label
-
 class LOGODataset(Dataset):
     def __init__(self, X_sec, X_tab, y):
         self.X_sec = torch.tensor(X_sec, dtype=torch.float32)
@@ -162,3 +142,83 @@ class PatchTSTClassification(nn.Module):
         out = out.view(out.size(0), -1) 
         out = self.classifier(out)
         return out
+
+class AttentionLayer(nn.Module):
+    def __init__(self, hidden_dim):
+        super(AttentionLayer, self).__init__()
+        # Inisialisasi weight untuk attention
+        self.W = nn.Linear(hidden_dim, 1, bias=True)
+
+    def forward(self, x):
+        # x memiliki dimensi: (batch_size, seq_length, hidden_dim)
+        e = torch.tanh(self.W(x)) 
+        a = F.softmax(e, dim=1)
+        output = x * a
+        return torch.sum(output, dim=1) # Hasil akhir: (batch_size, hidden_dim)
+
+class Hybrid_CNN_BiLSTM_Attention(nn.Module):
+    def __init__(self, c_in, tab_in, c_out=3, d_model=64, dropout=0.3):
+        super(Hybrid_CNN_BiLSTM_Attention, self).__init__()
+        
+        # === Blok CNN ===
+        # PyTorch Conv1D menggunakan format (batch, channel, seq_len)
+        # Jaringan ini menggunakan 64 filter sesuai referensi
+        self.conv1 = nn.Conv1d(in_channels=c_in, out_channels=d_model, kernel_size=3, padding=1)
+        self.pool1 = nn.MaxPool1d(kernel_size=2)
+        self.conv2 = nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=3, padding=1)
+        self.pool2 = nn.MaxPool1d(kernel_size=2)
+        self.dropout_cnn = nn.Dropout(dropout)
+
+        # === Blok BiLSTM ===
+        # Terdiri dari 3 lapis BiLSTM dengan 64 unit dan dropout 0.3
+        self.lstm1 = nn.LSTM(input_size=d_model, hidden_size=d_model, batch_first=True, bidirectional=True)
+        self.dropout_lstm1 = nn.Dropout(dropout)
+        self.lstm2 = nn.LSTM(input_size=d_model*2, hidden_size=d_model, batch_first=True, bidirectional=True)
+        self.dropout_lstm2 = nn.Dropout(dropout)
+        self.lstm3 = nn.LSTM(input_size=d_model*2, hidden_size=d_model, batch_first=True, bidirectional=True)
+        self.dropout_lstm3 = nn.Dropout(dropout)
+
+        # === Mekanisme Attention ===
+        self.attention = AttentionLayer(hidden_dim=d_model*2)
+
+        # === Lapisan Ekstraksi Fitur Temporal ===
+        # Diekstrak menggunakan Dense/Linear layer berukuran 64
+        self.fc_temporal_features = nn.Linear(d_model*2, d_model)
+        
+        # === Lapisan Klasifikasi Akhir (Fusion) ===
+        # Menggabungkan 64 fitur temporal dengan jumlah fitur tabular (tab_in)
+        self.classifier = nn.Linear(d_model + tab_in, c_out)
+
+    def forward(self, x_seq, x_tab):
+        # 1. Pemrosesan Data Sekuensial (X_sec)
+        # Transpose dari (batch, seq_len, channels) ke (batch, channels, seq_len) untuk Conv1D
+        x = x_seq.transpose(1, 2)
+        
+        x = F.relu(self.conv1(x))
+        x = self.pool1(x)
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)
+        x = self.dropout_cnn(x)
+
+        # Transpose kembali untuk input LSTM: (batch, seq_len_baru, channels)
+        x = x.transpose(1, 2)
+
+        x, _ = self.lstm1(x)
+        x = self.dropout_lstm1(x)
+        x, _ = self.lstm2(x)
+        x = self.dropout_lstm2(x)
+        x, _ = self.lstm3(x)
+        x = self.dropout_lstm3(x)
+
+        x = self.attention(x)
+        temporal_features = F.relu(self.fc_temporal_features(x)) #
+
+        # 2. Fusi dengan Data Tabular (X_tab)
+        # Konkatenasi fitur sekuensial yang sudah diekstrak dengan fitur tabular mentah
+        fused_features = torch.cat((temporal_features, x_tab), dim=1)
+
+        # 3. Klasifikasi
+        logits = self.classifier(fused_features)
+        
+        # Kembalikan logits mentah karena kamu menggunakan nn.CrossEntropyLoss
+        return logits
