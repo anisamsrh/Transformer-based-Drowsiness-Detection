@@ -109,7 +109,7 @@ class LOGODataset(Dataset):
 
     def __getitem__(self, idx):
         seq = self.X_sec[idx]
-        seq = seq.permute(1, 0)
+        # seq = seq.permute(1, 0)
         return seq, self.X_tab[idx], self.y[idx]
 
 class PatchTSTClassification(nn.Module):

@@ -49,11 +49,11 @@ def init_wandb(subject_id, periperal, timestamp,
     wandb.init(
         project=project_name, 
         name=f"LOSO_{subject_id}",
-        group="LOSO_Evaluation_v4",
+        group="Hybrid_Arch_v1",
         job_type=job_type,
         config={
             "learning_rate": lr,
-            "architecture": "TSTPlus",
+            "architecture": "Hybrid_Experimental",
             "loss-function" : loss_func,
             "n_layers" : nl,
             "dropout": dr,
@@ -138,7 +138,7 @@ def main():
                 dropout = DROPOUT
             ).to(device)
         loss_func = nn.CrossEntropyLoss(weight=class_weights_tensor) # CrossEntropyLoss for multiclass classification
-        optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
+        optimizer = optim.Adam(model.parameters(), lr=LR) # , weight_decay=WD
 
         # history = {'train_loss' : [], 
             # 'train_kss_acc': [],
@@ -151,7 +151,7 @@ def main():
         if args.wandb : 
             project_name="LOSO_Evaluation"
             init_wandb(subject_id, periperal, timestamp, project_name,
-                       LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__, weight_decay=WD,
+                       LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__, # weight_decay=WD,
                        job_type="train_fold")
             wandb.run.notes = args.notes
             class_weight = {
@@ -268,7 +268,7 @@ def main():
             # torch.save(checkpoint, f_checkpoint_path)
 
             val_bal_acc = balanced_accuracy_score(fold_y_true, fold_y_pred)
-            report_dict = classification_report(fold_y_true, fold_y_pred, zero_division=0, target_names=["Awake", "Drowsy", "Sleep"], output_dict=True)
+            report_dict = classification_report(fold_y_true, fold_y_pred, zero_division=0, target_names=["Awake", "Drowsy", "Sleep"], output_dict=True, labels=[0, 1, 2])
             epoch_kappa = cohen_kappa_score(fold_y_true, fold_y_pred)
             
             if args.wandb : 
@@ -319,7 +319,7 @@ def main():
     print("Confusion Matrix")
     print(cm)
     cr = classification_report(all_y_true, all_y_pred, zero_division=0, target_names=["Awake", "Drowsy", "Sleep"])
-    report_dict = classification_report(all_y_true, all_y_pred, target_names=["Awake", "Drowsy", "Sleep"], output_dict=True, zero_division=0)
+    report_dict = classification_report(all_y_true, all_y_pred, target_names=["Awake", "Drowsy", "Sleep"], output_dict=True, zero_division=0, labels=[0, 1, 2])
     df_global_report = pd.DataFrame(report_dict).transpose()
     print("Classification Report")
     print(cr)
