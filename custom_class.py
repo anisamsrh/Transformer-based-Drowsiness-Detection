@@ -156,7 +156,7 @@ class AttentionLayer(nn.Module):
         output = x * a
         return torch.sum(output, dim=1) # Hasil akhir: (batch_size, hidden_dim)
 
-class Hybrid_CNN_BiLSTM_Attention2(nn.Module):
+class Hybrid_CNN_BiLSTM_Attention(nn.Module):
     def __init__(self, c_in, tab_in, c_out=3, d_model=64, dropout=0.3):
         super(Hybrid_CNN_BiLSTM_Attention, self).__init__()
         
@@ -223,7 +223,7 @@ class Hybrid_CNN_BiLSTM_Attention2(nn.Module):
         # Kembalikan logits mentah karena kamu menggunakan nn.CrossEntropyLoss
         return logits
 
-class Hybrid_CNN_BiLSTM_Attention(nn.Module):
+class Light_Hybrid_Fusion(nn.Module):
     # d_model diturunkan default-nya ke 32, dropout dinaikkan ke 0.5
     def __init__(self, c_in, tab_in, c_out=3, d_model=32, dropout=0.5):
         super(Light_Hybrid_Fusion, self).__init__()

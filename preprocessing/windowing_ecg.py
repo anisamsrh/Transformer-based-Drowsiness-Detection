@@ -20,6 +20,14 @@ def get_pre_post_score(nf) :
     kss = nf.split("_")
     return int(kss[2]), int(kss[3])
 
+def do_cleaning_ecg(df):
+    df["log_time"] = pd.to_datetime(df['log_time'])
+    df = df.set_index("log_time")
+    df = df.resample("1s").mean().interpolate(method="linear").dropna()
+    df = df.reset_index()
+    df = df.rename(columns={"Heart_Rate_BPM": "heart_rate_ecg"})
+    return df[["log_time", "heart_rate_ecg"]]
+
 def do_cleaning(df):
     df["log_time"] = pd.to_datetime(df['log_time'])
     df = df.set_index("log_time")
@@ -49,10 +57,7 @@ def do_cleaning(df):
     df_scaled["heart_rate"] = df["heart_rate"]
     df_scaled["breath_rate"] = df["breath_rate"]
     df_scaled["timestamp"] = df["log_time"]
-    df_scaled["delta_hr"] = df["delta_hr"]
-    df_scaled["delta_br"] = df["delta_br"]
     return df_scaled
-
 
 def extract_window_features(window):
     hr = window[:,1]
@@ -121,66 +126,91 @@ def extract_window_features(window):
     # Frequency
     ##################################
 
-    f,p = welch(hr)
+    # f,p = welch(hr)
 
-    feat["hr_dom_freq"] = f[np.argmax(p)]
-    feat["hr_energy"] = np.sum(p)
+    # feat["hr_dom_freq"] = f[np.argmax(p)]
+    # feat["hr_energy"] = np.sum(p)
 
-    f,p = welch(br)
+    # f,p = welch(br)
 
-    feat["br_dom_freq"] = f[np.argmax(p)]
-    feat["br_energy"] = np.sum(p)
+    # feat["br_dom_freq"] = f[np.argmax(p)]
+    # feat["br_energy"] = np.sum(p)
 
     return feat
 
-def do_windowing(df_list, window_size=60, stride=15):
+def do_windowing(df_list, window_size=60, stride=15, min_accuracy=0.85):
     x_sequences = []
     x_tabular = []
     y_labels = []
     ids = []
-
     exploration=[]
     metadata=[]
 
+    accepted_windows = 0
+    rejected_windows = 0
+
     for session_idx, df in enumerate(df_list):
         df = df.iloc[1:].reset_index()
-        features = df[["breath_rate", "heart_rate", "delta_br", "delta_hr", "savgol_br", "savgol_hr"]].values
+        # window[:, 0] adalah breath_rate, window[:, 1] adalah heart_rate
+        features = df[["breath_rate", "heart_rate", "savgol_br", "savgol_hr"]].values
+        
+        hr_mmwave = df["hr_mmwave_raw"].values 
+        hr_ecg = df["heart_rate_ecg"].values
+        
         labels = df["class"].values
         id = df["id"][0]
 
         total_windows = (len(features) - window_size) // stride + 1
 
         for i in range(total_windows):
-            start=i*stride
-            end=start+window_size
-            window_seq = features[i*stride:i*stride+window_size]
+            start = i * stride
+            end = start + window_size
+            
+            window_hr_mm = hr_mmwave[start:end]
+            window_hr_ecg = hr_ecg[start:end]
+            
+            mape = np.abs(window_hr_mm - window_hr_ecg) / (window_hr_ecg + 1e-6)
+            similarity = np.clip(1.0 - mape, 0, 1)
+            window_accuracy = np.mean(similarity)
+            
+            if window_accuracy >= min_accuracy:
+                accepted_windows += 1
+                window_seq = features[start:end]
 
-            mean_features = np.mean(window_seq, axis=0)
-            std_features = np.std(window_seq, axis=0)
-            combined_features = np.concatenate([mean_features, std_features])
+                # --- BAGIAN YANG DIUBAH ---
+                # 1. Ekstrak fitur handcrafted dari window ini
+                exp_feat = extract_window_features(window_seq)
+                
+                # 2. Ambil values-nya saja untuk dijadikan array fitur X_tabular
+                combined_features = list(exp_feat.values())
+                # --------------------------
 
-            x_sequences.append(window_seq)
-            x_tabular.append(combined_features)
-            y_labels.append(labels[i*stride + window_size - 1])
-            ids.append(id)
+                x_sequences.append(window_seq)
+                x_tabular.append(combined_features) # Sekarang berisi puluhan fitur keren!
+                y_labels.append(labels[end - 1]) 
+                ids.append(id)
 
-            exp_feat=extract_window_features(window_seq)
-            exploration.append(exp_feat)
+                exploration.append(exp_feat)
 
-            metadata.append({
-                "subject":id,
-                "session":session_idx,
-                "window":i,
-                "time_sec":start,
-                "label":labels[end-1]
-            })
+                metadata.append({
+                    "subject": id,
+                    "session": session_idx,
+                    "window": i,
+                    "time_sec": start,
+                    "label": labels[end-1],
+                    "ecg_accuracy": round(window_accuracy, 3)
+                })
+            else:
+                rejected_windows += 1
 
-    exploration=pd.DataFrame(exploration)
-    metadata=pd.DataFrame(metadata)
+    print(f"Windowing Selesai | Diterima: {accepted_windows} | Dibuang karena noise: {rejected_windows}")
+
+    exploration = pd.DataFrame(exploration)
+    metadata = pd.DataFrame(metadata)
     x_sequence = np.array(x_sequences, dtype=np.float32)
     x_tabular = np.array(x_tabular, dtype=np.float32)
     y_labels = np.array(y_labels, dtype=np.int64)
-    return x_sequences, x_tabular, y_labels, ids, exploration, metadata
+    return x_sequence, x_tabular, y_labels, ids, exploration, metadata
 
 def extract_savgol(df):
     from scipy.signal import savgol_filter
@@ -191,7 +221,7 @@ def extract_savgol(df):
 def scaling(dfs):
     df_all = pd.concat(dfs, ignore_index=True)
     
-    cols = ["heart_rate", "breath_rate", "delta_hr", "delta_br"]
+    cols = ["heart_rate", "breath_rate"] # "delta_hr", "delta_br"
     for col in cols:
         df_all[col] = df_all.groupby('id')[col].transform(
             lambda x: StandardScaler().fit_transform(x.to_frame()).flatten()
@@ -270,17 +300,74 @@ def load_data(ft, file, classes=3, filter=[]) :
         
     return pd_list
 
-file = "mmwave_ss.csv"
+def load_data_with_ecg(ft, file_mmwave="mmwave_ss.csv", file_ecg="mam_sense.csv", classes=3, filter=[]): 
+    current_dir = Path(__file__).resolve().parent
+    parent = current_dir.parent
+    if len(filter) == 0:
+        folders = glob.glob(f"{parent}/{ft}/*")
+    else:
+        folders = [f for f in glob.glob(f"{parent}/{ft}/*")
+                    if any(str(keyword) in Path(f).name for keyword in filter)]
+    pd_list = []
+
+    for f in folders:
+        df_mm = pd.read_csv(f"{f}/{file_mmwave}")
+        df_mm_scaled = do_cleaning(df_mm) # Outputnya punya kolom 'timestamp'
+        df_ecg = pd.read_csv(f"{f}/{file_ecg}")
+        df_ecg_cleaned = do_cleaning_ecg(df_ecg) # Outputnya punya kolom 'log_time'
+        
+        # Sinkronisasi Data (Merge berdasarkan waktu)
+        df_merged = pd.merge(df_mm_scaled, df_ecg_cleaned, left_on="timestamp", right_on="log_time", how="inner")
+        df_merged["hr_mmwave_raw"] = df_merged["heart_rate"].copy()
+        
+        df_merged["id"] = get_id(f)
+        df_merged["kss_score"] = get_kss_score(f)
+        if classes == 2 :
+            df_merged["class"] = [0 if v < 7 else 1 for v in df_merged["kss_score"].values]
+        elif classes == 3:
+            df_merged["class"] = [0 if v <= 4 else (1 if v <=7 else 2) for v in df_merged["kss_score"].values]
+        
+        pd_list.append(df_merged)
+
+    pd_list = scaling(pd_list)
+    for df in pd_list:
+        df = extract_savgol(df)
+        
+    return pd_list
+
+file_mm = "mmwave_ss.csv"
+file_ecg = "mam_sense.csv"
 save_path = "data_ready"
 os.makedirs(save_path, exist_ok=True)
 
-train_df_list = load_data_as_df_list_tsdc("data", file, filter=["22056", "22041"]) 
+train_df_list = load_data_with_ecg("data", file_mmwave=file_mm, file_ecg=file_ecg, classes=2)
 # train_df_list = load_data_as_df_list_tsdc("data", file, filter=["22009", "22020", "22026", "22038", "22054", "22064", "23015", "23051", "23066", "24059", "24088"]) 221056
 # train_df_list = load_data("data", file)
 # X_sequence, X_tabular, y_labels, ids = do_windowing(train_df_list)
-X_sequence, X_tabular, y_labels, ids, exploration, metadata = do_windowing(train_df_list)
-np.savez(f"{save_path}/train_filter.npz", X_seq=X_sequence, X_tab=X_tabular, y=y_labels, id=ids, exploration=exploration, metadata=metadata)
+X_sequence, X_tabular, y_labels, ids, exploration, metadata = do_windowing(
+    train_df_list, 
+    window_size=60, 
+    stride=10, # Boleh diatur ulang, misal 10 agar datanya lebih padat
+    min_accuracy=0.85
+)
 
-# val_df_list = load_data_as_df_list_tsdc("data", file)
-# X_sequence, X_tabular, y_labels, ids = do_windowing(val_df_list)
-# np.savez(f"{save_path}/val.npz", X_seq=X_sequence, X_tab=X_tabular, y=y_labels, id=ids)
+
+import pickle
+tabular_cols = exploration.columns.tolist()
+df_tabular = pd.DataFrame(X_tabular, columns=tabular_cols)
+
+# Bungkus data
+data_to_save = {
+    "X_seq": X_sequence,
+    "X_tab": df_tabular, # Sekarang data tabularmu punya nama kolom seperti 'hr_rmssd', 'br_entropy', dll.
+    "y": y_labels,
+    "id": ids,
+    "exploration": exploration,
+    "metadata": metadata
+}
+
+save_file = f"{save_path}/train_filter.pkl"
+with open(save_file, "wb") as f:
+    pickle.dump(data_to_save, f)
+
+np.savez(f"{save_path}/train_filter.npz", X_seq=X_sequence, X_tab=X_tabular, y=y_labels, id=ids, exploration=exploration, metadata=metadata)

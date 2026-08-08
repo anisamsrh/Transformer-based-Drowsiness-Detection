@@ -2,6 +2,8 @@ import argparse
 from datetime import datetime
 import pandas as pd
 import random
+import numpy as np
+import os
 from sklearn.metrics import (
     f1_score,
     classification_report, 
@@ -11,8 +13,10 @@ from sklearn.metrics import (
     roc_auc_score
 )
 from tsai.all import *
-from sklearn.model_selection import LeaveOneGroupOut
+# Perubahan dari LeaveOneGroupOut ke StratifiedGroupKFold
+from sklearn.model_selection import StratifiedGroupKFold 
 from sklearn.utils.class_weight import compute_class_weight
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -35,7 +39,7 @@ def load_args():
     args = parser.parse_args()
     return args
 
-def init_wandb(subject_id, periperal, timestamp, 
+def init_wandb(fold_name, periperal, timestamp, 
             project_name="Evaluation",
             lr=0.0001,
             nl=1,
@@ -48,12 +52,12 @@ def init_wandb(subject_id, periperal, timestamp,
     ):
     wandb.init(
         project=project_name, 
-        name=f"Inception_{subject_id}",
-        group="Inception_Experiment_v1",
+        name=f"{fold_name}",
+        group="Hybrid_Arch_v1",
         job_type=job_type,
         config={
             "learning_rate": lr,
-            "architecture": "InceptionTimePlus",
+            "architecture": "Hybrid_Experimental",
             "loss-function" : loss_func,
             "n_layers" : nl,
             "dropout": dr,
@@ -83,7 +87,7 @@ def main():
     WD = train_params.get("weight_decay", CONFIG.WEIGHT_DECAY)
     EPOCH = args.epoch or CONFIG.EPOCH
     RANDOM_SEED = CONFIG.RANDOM_SEED
-    NUM_CLASSES = 3
+    NUM_CLASSES = 2 
     ##################################
 
     random.seed(RANDOM_SEED)
@@ -93,21 +97,23 @@ def main():
     timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     basepath = f"logs/{periperal}_{timestamp}"
 
-    data = np.load("data_ready/train.npz")
+    data = np.load("data_ready/train_filter.npz")
     X_sec, X_tab, y, groups = data["X_seq"], data["X_tab"], data["y"], data["id"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training using {device}")
 
-    logo = LeaveOneGroupOut()
+    # Menggunakan StratifiedGroupKFold
+    sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
 
     all_y_true = []
     all_y_pred = []
     all_y_prob = []
 
-    for fold, (train_idx, val_idx) in enumerate(logo.split(X_sec, y, groups)):
-        subject_id = groups[val_idx][0]
-        print(f"Fold {fold + 1} | Validation on SUBJECT ID: {subject_id}")
+    for fold, (train_idx, val_idx) in enumerate(sgkf.split(X_sec, y, groups)):
+        val_subjects = np.unique(groups[val_idx])
+        fold_name = f"Fold_{fold+1}"
+        print(f"{fold_name} | Validation on Subjects: {val_subjects}")
 
         X_train, X_tab_train, y_train = X_sec[train_idx], X_tab[train_idx], y[train_idx]
         X_val, X_tab_val, y_val = X_sec[val_idx], X_tab[val_idx], y[val_idx]
@@ -128,48 +134,38 @@ def main():
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-        model = InceptionTimePlus(
-            c_in=6, 
-            c_out=NUM_CLASSES,
-            seq_len=ICL,
-            nf=32,               # Jumlah filter dasar (jangan terlalu besar)
-            fc_dropout=0.5,      # Dropout tinggi untuk regulasi
-            concat_pool=True     # Menggunakan AdaptiveAvgPool1d dan MaxPool1d sekaligus
-        ).to(device)
-        loss_func = nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=0.15) # CrossEntropyLoss for multiclass classification
-        optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
+        TAB_FEATURES_COUNT = X_tab_train.shape[1]
 
-        # history = {'train_loss' : [], 
-            # 'train_kss_acc': [],
-            # 'val_loss' : [],
-            # 'val_kss_acc': [],
-            # }
-
-        # best_val_loss = float('inf')
+        model = Hybrid_CNN_BiLSTM_Attention(
+                c_in = 4, 
+                tab_in = TAB_FEATURES_COUNT,
+                c_out = NUM_CLASSES, 
+                d_model = D_MODEL,   
+                dropout = DROPOUT
+            ).to(device)
+        loss_func = nn.CrossEntropyLoss(weight=class_weights_tensor) 
+        optimizer = optim.Adam(model.parameters(), lr=LR) 
 
         if args.wandb : 
-            project_name="LOSO_Evaluation"
-            init_wandb(subject_id, periperal, timestamp, project_name,
-                       LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__, weight_decay=WD,
+            project_name="SGKF_Evaluation_2_Class"
+            init_wandb(fold_name, periperal, timestamp, project_name,
+                       LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__,
                        job_type="train_fold")
             wandb.run.notes = args.notes
             class_weight = {
                 "awake": safe_weights[0],
-                "drowsy": safe_weights[1],
-                "sleep": safe_weights[2]
+                "drowsy": safe_weights[1]
             }
             wandb.config.update({"class_weights":class_weight})
 
         for e in range(EPOCH):
-            # TRAINING
             model.train()
             total_train_loss = 0.0
             total_train_acc = 0.0
-
             total_samples = 0
 
             for data_seq, data_tab, label in train_loader:
-                data = data_seq.to(device)
+                data_seq = data_seq.to(device)
                 data_tab = data_tab.to(device) 
                 label = label.to(device)
 
@@ -177,7 +173,7 @@ def main():
                 total_samples += batch_size
 
                 optimizer.zero_grad() 
-                pred_label = model(data)
+                pred_label = model(data_seq, data_tab)
                 loss = loss_func(pred_label.squeeze(-1), label)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -185,15 +181,11 @@ def main():
 
                 with torch.no_grad():
                     total_train_loss += loss.item() * batch_size
-
                     pred_class = torch.argmax(pred_label, dim=1)
                     total_train_acc += (pred_class == label).sum().item()
             
             epoch_loss = total_train_loss / total_samples
             epoch_acc = total_train_acc / total_samples
-
-            # history['train_loss'].append(epoch_loss)
-            # history['train_kss_acc'].append(epoch_acc)
             
             if args.log or e == EPOCH - 1 :
                 print(f"[Epoch {e+1}/{EPOCH}] Loss : {epoch_loss:.4f} | Accuracy : {epoch_acc:.4f}")
@@ -205,11 +197,10 @@ def main():
             fold_y_prob = []
 
             total_val_loss = 0.0
-
             total_samples = 0
 
             for data_seq, data_tab, label in val_loader:
-                data = data_seq.to(device)
+                data_seq = data_seq.to(device)
                 data_tab = data_tab.to(device) 
                 label = label.to(device)
 
@@ -217,12 +208,11 @@ def main():
                 total_samples += batch_size
 
                 with torch.no_grad():
-                    pred_label = model(data)
+                    pred_label = model(data_seq, data_tab)
                     loss = loss_func(pred_label.squeeze(-1), label)
                     total_val_loss += loss.item() * batch_size
 
                     pred_class = torch.argmax(pred_label, dim=1)
-                    # _, preds = torch.max(outputs, 1)
                     probs = F.softmax(pred_label, dim=1)
 
                     fold_y_pred.extend(pred_class.cpu().numpy())
@@ -240,34 +230,8 @@ def main():
             if args.log or e == EPOCH - 1 :
                 print(f"[Epoch {e+1}/{EPOCH}] Val Accuracy : {fold_acc:.4f}")
 
-            # if epoch_val_loss < best_val_loss:
-            #     best_val_loss = epoch_val_loss
-            #     f_model_path = f"{basepath}/models/best_weight.pth"
-            #     os.makedirs(f"{basepath}/models", exist_ok=True)
-            #     torch.save(model.state_dict(), f_model_path)
-
-            #     os.makedirs(f"{basepath}/checkpoints", exist_ok=True)
-            #     f_checkpoint_path = f"{basepath}/checkpoints/best-epoch.pth.tar"
-            #     checkpoint = {
-            #         'epoch': e,
-            #         'model_state_dict': model.state_dict(),
-            #         'optimizer_state_dict': optimizer.state_dict(),
-            #         'best_val_loss': best_val_loss,
-            #     }
-            #     torch.save(checkpoint, f_checkpoint_path)
-            
-            # os.makedirs(f"{basepath}/checkpoints", exist_ok=True)
-            # f_checkpoint_path = f"{basepath}/checkpoints/last-epoch.pth.tar"
-            # checkpoint = {
-            #     'epoch': e,
-            #     'model_state_dict': model.state_dict(),
-            #     'optimizer_state_dict': optimizer.state_dict(),
-            #     'best_val_loss': best_val_loss,
-            # }
-            # torch.save(checkpoint, f_checkpoint_path)
-
             val_bal_acc = balanced_accuracy_score(fold_y_true, fold_y_pred)
-            report_dict = classification_report(fold_y_true, fold_y_pred, zero_division=0, target_names=["Awake", "Drowsy", "Sleep"], output_dict=True, labels=[0, 1, 2])
+            report_dict = classification_report(fold_y_true, fold_y_pred, zero_division=0, target_names=["Awake", "Drowsy"], output_dict=True, labels=[0, 1])
             epoch_kappa = cohen_kappa_score(fold_y_true, fold_y_pred)
             
             if args.wandb : 
@@ -288,18 +252,16 @@ def main():
 
                 if e == EPOCH -1:
                     df_report = pd.DataFrame(report_dict).transpose()
-                    # df_report.reset_index(inplace=True)
-                    # df_report.columns = ['class', 'precision', 'recall', 'f1-score', 'support']
                     wandb.log({
                         "confusion_matrix": wandb.plot.confusion_matrix(
                             preds=fold_y_pred, 
                             y_true=fold_y_true, 
-                            class_names=["Awake", "Drowsy", "Sleep"]
+                            class_names=["Awake", "Drowsy"]
                         ),
                         "roc_curve": wandb.plot.roc_curve(
                             fold_y_true, 
                             fold_y_prob, 
-                            labels=["Awake", "Drowsy", "Sleep"]
+                            labels=["Awake", "Drowsy"]
                         ),
                         "classification_report": wandb.Table(dataframe=df_report)
                     })
@@ -308,7 +270,7 @@ def main():
 
     if args.wandb : 
         subject_id = "Global"
-        project_name="LOSO_Evaluation"
+        project_name="SGKF_Evaluation_2_Class"
         init_wandb(subject_id, periperal, timestamp, project_name,
                     LR, N_LAYERS, DROPOUT, D_MODEL, N_HEADS, loss_func.__class__.__name__, weight_decay=WD,
                     job_type="global_eval")
@@ -317,8 +279,8 @@ def main():
     cm = confusion_matrix(all_y_true, all_y_pred)
     print("Confusion Matrix")
     print(cm)
-    cr = classification_report(all_y_true, all_y_pred, zero_division=0, target_names=["Awake", "Drowsy", "Sleep"])
-    report_dict = classification_report(all_y_true, all_y_pred, target_names=["Awake", "Drowsy", "Sleep"], output_dict=True, zero_division=0, labels=[0, 1, 2])
+    cr = classification_report(all_y_true, all_y_pred, zero_division=0, target_names=["Awake", "Drowsy"])
+    report_dict = classification_report(all_y_true, all_y_pred, target_names=["Awake", "Drowsy"], output_dict=True, zero_division=0, labels=[0, 1])
     df_global_report = pd.DataFrame(report_dict).transpose()
     print("Classification Report")
     print(cr)
@@ -332,9 +294,9 @@ def main():
     kappa = cohen_kappa_score(all_y_true, all_y_pred)
     print(f"COHEN'S KAPPA    : {kappa:.4f}")
 
-    # use multi_class='ovr' (One-vs-Rest) cuz 3 class
-    roc_auc = roc_auc_score(all_y_true, np.array(all_y_prob), multi_class='ovr', average='macro', labels=[0, 1, 2])
-    print(f"MACRO ROC-AUC    : {roc_auc:.4f}")
+    prob_drowsy = np.array(all_y_prob)[:, 1]
+    roc_auc = roc_auc_score(all_y_true, prob_drowsy)
+    print(f"ROC-AUC          : {roc_auc:.4f}")
 
     os.makedirs(f"{basepath}", exist_ok=True)
     report_path = f"{basepath}/report.txt"
@@ -346,31 +308,30 @@ def main():
         f.write("Classification Report \n")
         f.write(cr)
         f.write("\n\n")
-        f.write(f"BALANCED ACCURACY : {global_bal_acc:.4f}")
-        f.write(f"COHEN'S KAPPA    : {kappa:.4f}")
-        f.write(f"MACRO ROC-AUC    : {roc_auc:.4f}")
+        f.write(f"BALANCED ACCURACY : {global_bal_acc:.4f}\n")
+        f.write(f"COHEN'S KAPPA    : {kappa:.4f}\n")
+        f.write(f"ROC-AUC          : {roc_auc:.4f}\n")
 
-
-    if args.wandb : wandb.log({
-        "Global/balanced_accuracy": global_bal_acc,
-        "Global/macro_f1": global_macro_f1,
-        "Global/macro_precision": report_dict["macro avg"]["precision"],
-        "Global/macro_recall": report_dict["macro avg"]["f1-score"],
-        "Global/kappa": kappa,
-        "global_confusion_matrix": wandb.plot.confusion_matrix(
-            preds=all_y_pred, 
-            y_true=all_y_true, 
-            class_names=["Awake", "Drowsy", "Sleep"]
-        ),
-        "global_roc_curve": wandb.plot.roc_curve(
-            all_y_true, 
-            all_y_prob, 
-            labels=["Awake", "Drowsy", "Sleep"]
-        ),
-        "global_classification_report": wandb.Table(dataframe=df_global_report)
-    })
-
-    wandb.finish()
+    if args.wandb:
+        wandb.log({
+            "Global/balanced_accuracy": global_bal_acc,
+            "Global/macro_f1": global_macro_f1,
+            "Global/macro_precision": report_dict["macro avg"]["precision"],
+            "Global/macro_recall": report_dict["macro avg"]["f1-score"],
+            "Global/kappa": kappa,
+            "global_confusion_matrix": wandb.plot.confusion_matrix(
+                preds=all_y_pred, 
+                y_true=all_y_true, 
+                class_names=["Awake", "Drowsy"]
+            ),
+            "global_roc_curve": wandb.plot.roc_curve(
+                all_y_true, 
+                all_y_prob, 
+                labels=["Awake", "Drowsy"]
+            ),
+            "global_classification_report": wandb.Table(dataframe=df_global_report)
+        })
+        wandb.finish()
 
 if __name__ == "__main__":
     main()
